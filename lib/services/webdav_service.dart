@@ -141,33 +141,32 @@ class WebDavService {
             if (decoded is List) rawPaths = decoded.map((e) => e.toString()).toList();
           } catch (_) {}
 
-          List<String> localPaths = [];
-          for (var pStr in rawPaths) {
-            final baseName = p.basename(pStr);
-            final localFile = File(p.join(imagesDir.path, baseName));
+          List<String> updatedPaths = [];
+          for (var rawP in rawPaths) {
+            final fileName = p.basename(rawP);
+            final localImageFile = File(p.join(imagesDir.path, fileName));
 
-            // 如果本地不存在，从 WebDAV 下载
-            if (!await localFile.exists()) {
-              try {
-                final imgUrl = Uri.parse(_formatUrl(settings.webdavUrl, '$remoteDir/images/$baseName'));
-                final imgRes = await http.get(
-                  imgUrl,
-                  headers: {'Authorization': _getAuthHeader(settings)},
-                );
-                if (imgRes.statusCode == 200) {
-                  await localFile.writeAsBytes(imgRes.bodyBytes);
-                }
-              } catch (_) {}
+            if (!await localImageFile.exists()) {
+              final imgDownloadUrl = Uri.parse(_formatUrl(settings.webdavUrl, '$remoteDir/images/$fileName'));
+              final imgRes = await http.get(imgDownloadUrl, headers: {
+                'Authorization': _getAuthHeader(settings),
+              });
+              if (imgRes.statusCode == 200) {
+                await localImageFile.writeAsBytes(imgRes.bodyBytes);
+              }
             }
-
-            localPaths.add(localFile.path);
+            updatedPaths.add(localImageFile.path);
           }
-          r['imagePaths'] = jsonEncode(localPaths);
+          r['imagePaths'] = jsonEncode(updatedPaths);
         }
       }
     }
 
-    // 恢复全部数据、全部设置与自定义分类
+    // 导入还原全部数据
     await StorageService.instance.importAllData(data);
+  }
+
+  Future<void> restoreDataFromWebDav(AppSettings settings) async {
+    await downloadDataFromWebDav(settings);
   }
 }
