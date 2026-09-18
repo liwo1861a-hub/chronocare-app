@@ -71,7 +71,6 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
         imageCategoryMap[item.sourceImagePath] = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验';
       }
     }
-    // 如果某些图片未在 item 中记录，则默认绑定到对应栏目或首栏目
     for (var imgPath in record.imagePaths) {
       if (!imageCategoryMap.containsKey(imgPath)) {
         imageCategoryMap[imgPath] = currentCategory;
@@ -91,7 +90,6 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       }
     }
 
-    // 根据模式决定展示哪些图片
     final List<String> displayImages = _showOnlyCurrentCategoryImages
         ? currentCategoryImages
         : record.imagePaths;
@@ -226,7 +224,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: categoryNames.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (c, i) => const SizedBox(width: 8),
                   itemBuilder: (context, idx) {
                     final catName = categoryNames[idx];
                     final isSelected = idx == _selectedCategoryIndex;
@@ -411,7 +409,6 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                               final imgPath = displayImages[imgIdx];
                               return GestureDetector(
                                 onTap: () {
-                                  // 打开全新沉浸式全屏画廊浏览器
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -469,63 +466,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                         separatorBuilder: (c, i) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
                         itemBuilder: (c, itemIdx) {
                           final item = currentItems[itemIdx];
-                          final isAbnormal = item.status != 'normal';
-                          final refText = item.referenceRange.isNotEmpty ? item.referenceRange : '未注明';
-                          final noteText = item.notes.isNotEmpty ? ' · ${item.notes}' : '';
-
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  flex: 4,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.itemName,
-                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                      ),
-                                      Text(
-                                        '参考值: $refText$noteText',
-                                        style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: isAbnormal
-                                            ? (isDark ? const Color(0xFF881337).withOpacity(0.5) : Colors.red.shade50)
-                                            : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.5) : Colors.green.shade50),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
-                                        style: TextStyle(
-                                          color: isAbnormal
-                                              ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
-                                              : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+                          return _buildCheckItemRow(item, isDark);
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -543,7 +486,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: record.medicationChanges.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (c, i) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final med = record.medicationChanges[index];
                     return ListTile(
@@ -578,6 +521,66 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             const SizedBox(height: 30),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCheckItemRow(CheckItem item, bool isDark) {
+    final isAbnormal = item.status != 'normal';
+    final refText = item.referenceRange.isNotEmpty ? item.referenceRange : '未注明';
+    final noteText = item.notes.isNotEmpty ? ' · ${item.notes}' : '';
+    final arrow = isAbnormal ? (item.status == 'high' ? ' ↑' : ' ↓') : '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.itemName,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                Text(
+                  '参考值: $refText$noteText',
+                  style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isAbnormal
+                      ? (isDark ? const Color(0xFF881337).withOpacity(0.5) : Colors.red.shade50)
+                      : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.5) : Colors.green.shade50),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                  ),
+                ),
+                child: Text(
+                  '${item.value} ${item.unit}$arrow',
+                  style: TextStyle(
+                    color: isAbnormal
+                        ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                        : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
