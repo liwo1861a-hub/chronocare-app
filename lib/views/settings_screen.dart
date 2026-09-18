@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/settings_provider.dart';
+import '../providers/records_provider.dart';
 import '../services/webdav_service.dart';
 import '../services/backup_service.dart';
 import '../services/update_service.dart';
@@ -23,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _isTestingWebdav = false;
   bool _isSyncing = false;
+  bool _isDownloadingWebdav = false;
   bool _isCheckingUpdate = false;
   double _downloadProgress = 0.0;
   bool _isDownloadingApk = false;
@@ -49,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final prov = Provider.of<SettingsProvider>(context);
+    final recordsProv = Provider.of<RecordsProvider>(context, listen: false);
     final s = prov.settings;
 
     return Scaffold(
@@ -58,10 +61,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           // 0. 高级功能入口卡片 (显眼置顶)
           Card(
-            color: Colors.blue.shade50,
+            color: Colors.blue.shade50.withOpacity(0.3),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: Colors.blue.shade200),
+              side: BorderSide(color: Colors.blue.withOpacity(0.3)),
             ),
             child: ListTile(
               leading: const CircleAvatar(
@@ -82,7 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
 
           // 1. WebDAV 云同步配置
-          const Text('☁️ WebDAV 云端同步与自动同步', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const Text('☁️ WebDAV 云端全量同步 (含全部图片与设置)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -92,7 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   SwitchListTile(
                     title: const Text('启用 WebDAV 自动同步', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('支持坚果云、Nextcloud、群晖 NAS 等'),
+                    subtitle: const Text('支持坚果云、Nextcloud、群晖 NAS 等 (同步全部图片与配置)'),
                     value: s.webdavEnabled,
                     onChanged: (val) {
                       s.webdavEnabled = val;
@@ -147,13 +150,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : const Text('测试连接'),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: ElevatedButton(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                            icon: const Icon(Icons.cloud_upload, size: 16, color: Colors.white),
+                            label: _isSyncing
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('全量上传', style: TextStyle(color: Colors.white)),
                             onPressed: _isSyncing ? null : () => _syncNow(s),
-                            child: _isSyncing
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Text('立即同步'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                            icon: const Icon(Icons.cloud_download, size: 16, color: Colors.white),
+                            label: _isDownloadingWebdav
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('从云端还原', style: TextStyle(color: Colors.white)),
+                            onPressed: _isDownloadingWebdav ? null : () => _pullFromWebdav(s, prov, recordsProv),
                           ),
                         ),
                       ],
@@ -166,7 +182,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
 
           // 2. 本地数据全量备份与恢复
-          const Text('💾 本地备份与恢复', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const Text('💾 本地 100% 完整备份与恢复', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -175,17 +191,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.file_download, color: Colors.indigo),
                   title: const Text('导出完整数据备份 (ZIP 包)'),
-                  subtitle: const Text('包含全部复查记录、检验指标与化验单照片原图'),
+                  subtitle: const Text('包含全部病历、检验指标、照片原图、自定义设置与分类'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _exportBackup,
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.file_upload, color: Colors.teal),
-                  title: const Text('从备份包恢复数据'),
-                  subtitle: const Text('选择本地 .zip 备份包快速还原'),
+                  title: const Text('从备份包恢复数据 (开箱即用)'),
+                  subtitle: const Text('一键还原所有病历、化验单照片、API Keys 与所有设置'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: _restoreBackup,
+                  onTap: () => _restoreBackup(prov, recordsProv),
                 ),
               ],
             ),
@@ -193,7 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
 
           // 3. UI 与外观个性化
-          const Text('🎨 外观与栏目个性化', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const Text('🎨 外观与个性化', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -208,7 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     items: const [
                       DropdownMenuItem(value: 'system', child: Text('跟随系统')),
                       DropdownMenuItem(value: 'light', child: Text('浅色模式')),
-                      DropdownMenuItem(value: 'dark', child: Text('深色模式')),
+                      DropdownMenuItem(value: 'dark', child: Text('深色模式 (高对比度)')),
                     ],
                     onChanged: (val) {
                       if (val != null) prov.updatePartial(themeMode: val);
@@ -228,7 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
 
           // 4. 关于与 App 内检查更新
-          const Text('ℹ️ 关于与更新', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const Text('ℹ️ 关于与更新 (永久固定签名)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -251,7 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('正在下载最新更新包: ${(_downloadProgress * 100).toStringAsFixed(1)}%'),
+                        Text('正在下载最新安装包 (支持就地覆盖升级): ${(_downloadProgress * 100).toStringAsFixed(1)}%'),
                         const SizedBox(height: 6),
                         LinearProgressIndicator(value: _downloadProgress),
                       ],
@@ -288,7 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await WebDavService.instance.uploadDataToWebDav(s);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 数据已成功同步至 WebDAV 云端！')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 全部数据、化验单图片与设置已成功同步至 WebDAV 云端！')));
       }
     } catch (e) {
       if (mounted) {
@@ -296,6 +312,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } finally {
       setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<void> _pullFromWebdav(s, SettingsProvider prov, RecordsProvider recordsProv) async {
+    _saveWebdavFields(s);
+    setState(() => _isDownloadingWebdav = true);
+    try {
+      await WebDavService.instance.downloadDataFromWebDav(s);
+      await prov.loadSettings();
+      await recordsProv.loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从 WebDAV 完整恢复所有病历、图片与设置，开箱即用！')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('还原失败: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      setState(() => _isDownloadingWebdav = false);
     }
   }
 
@@ -312,7 +347,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final zipFile = await BackupService.instance.createFullBackupZip();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('备份导出成功！保存在: ${zipFile.path}')),
+          SnackBar(content: Text('完整备份已导出！保存在: ${zipFile.path}')),
         );
       }
     } catch (e) {
@@ -322,7 +357,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _restoreBackup() async {
+  Future<void> _restoreBackup(SettingsProvider prov, RecordsProvider recordsProv) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['zip', 'ccbackup'],
@@ -331,8 +366,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         final file = File(result.files.single.path!);
         await BackupService.instance.restoreFromBackupZip(file);
+        await prov.loadSettings();
+        await recordsProv.loadData();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('数据已从备份包成功恢复！')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 数据、照片原图、设置与分类已 100% 完整恢复！')));
         }
       } catch (e) {
         if (mounted) {
@@ -350,7 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (release == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前已是最新版本 (v1.0.0)')),
+          SnackBar(content: Text('当前已是最新版本 (v${UpdateService.currentVersion})')),
         );
       }
     } else {
@@ -375,7 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Navigator.pop(ctx);
                   _startDownloadUpdate(release.downloadUrl);
                 },
-                child: const Text('立即更新'),
+                child: const Text('立即更新 (就地覆盖)'),
               ),
             ],
           ),
