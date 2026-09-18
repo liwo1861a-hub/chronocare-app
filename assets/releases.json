@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.6",
-    "name": "ChronoCare v1.0.6 全屏无黑边画廊与左右滑动双向联动版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.6\n- 🖼️ 彻底解决放大图片时黑边遮挡的问题：采用全屏沉浸式画廊与无边界缩放，支持自由拖拽与双击放大\n- 🔄 支持左右横滑切换化验单图片，并双向联动切换所属检查项目栏目\n- 📑 顶部横向选项卡快速选择栏目，支持自定义修改栏目名称\n- 💾 100% 全量图文备份与 WebDAV 自动同步\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-18T17:00:00Z",
+    "tag_name": "v1.0.7",
+    "name": "ChronoCare v1.0.7 单据级智能归并与一键栏目合并版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.7\n- 📑 单据级统一归类（杜绝过细碎片化）：整张化验单的所有检测指标全部完整保留在当前报告单大栏目下，极速查阅\n- 🔗 支持一键合并栏目：可在详情页随时将碎片化栏目合并入目标大单据栏目中\n- 🖼️ 沉浸式全屏画廊浏览器，彻底消除黑边与遮挡\n- 🔄 左右滑动双向切图与栏目切换联动\n- 🔒 永久固化 Release 签名支持无缝就地更新",
+    "published_at": "2025-05-18T18:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.6-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.6/app-release.apk"
+        "name": "chronocare-v1.0.7-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.7/app-release.apk"
       }
     ]
   }

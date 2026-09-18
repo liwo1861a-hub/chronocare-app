@@ -1,15 +1,15 @@
 {
-  "version": "1.0.6",
-  "build_number": 7,
+  "version": "1.0.7",
+  "build_number": 8,
   "release_date": "2025-05-18",
   "app_name": "脉络健康 (ChronoCare)",
   "package_name": "com.liwo.chronocare",
   "changelog": [
-    "🖼️ 沉浸式无黑边全屏画廊浏览器：重构 InteractiveViewer 与 SystemUI，彻底解决两指缩放时黑边遮挡放大内容的问题，支持自由无限拖拽与双击放大",
-    "🔄 左右滑动双向切图与切栏目联动：大图模式支持无缝左右横滑切换化验单原图，自动联动切换当前图片所属的检查栏目",
-    "📑 检查栏目横向滑动选择与重命名",
-    "💾 100% 全量图文备份与 WebDAV 自动双向同步",
-    "🔒 永久固化 Release 签名"
+    "📑 单据级统一归并与抗碎片化：AI 与 OCR 提取全面强化化验单顶级报告单归类，严禁拆分过细；同一张单据上的所有指标 100% 完整保留在该单据栏目下",
+    "🔗 支持一键合并栏目：详情页顶部新增【合并栏目】功能，可自由将误拆分的细小栏目一键合并至目标大单据栏目下",
+    "🖼️ 全屏无黑边全景画廊浏览器，支持双指自由缩放无遮挡拖拽",
+    "🔄 左右滑动双向切图与栏目自动联动",
+    "🔒 永久固化 Release 签名支持 App 内无缝更新"
   ],
   "download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/latest"
 }

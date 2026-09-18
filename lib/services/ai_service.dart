@@ -1,107 +1,94 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import '../models/app_settings.dart';
 import '../models/check_item.dart';
 import '../models/medication.dart';
-import 'package:uuid/uuid.dart';
+import '../models/app_settings.dart';
 
 class AiAnalysisResult {
-  String hospital;
-  String department;
-  String doctorName;
-  DateTime? checkDate; // 开单/检查日期
-  String category;
-  String doctorAdvice;
-  List<CheckItem> items;
-  List<MedicationChange> medicationChanges;
-  String rawResponse;
+  final DateTime? checkDate;
+  final String hospital;
+  final String department;
+  final String doctorName;
+  final String category; // 顶级检查单据大类名称
+  final String doctorAdvice;
+  final List<CheckItem> items;
+  final List<MedicationAdjustment> medicationChanges;
 
   AiAnalysisResult({
+    this.checkDate,
     this.hospital = '',
     this.department = '',
     this.doctorName = '',
-    this.checkDate,
-    this.category = '血液生化',
+    this.category = '常规化验',
     this.doctorAdvice = '',
-    List<CheckItem>? items,
-    List<MedicationChange>? medicationChanges,
-    this.rawResponse = '',
-  })  : items = items ?? [],
-        medicationChanges = medicationChanges ?? [];
+    this.items = const [],
+    this.medicationChanges = const [],
+  });
 }
 
 class AiService {
   static final AiService instance = AiService._();
   AiService._();
 
-  static const String _systemPrompt = '''
-你是一位资深医疗化验单与病历解析专家。请严格分析输入的化验单图片或文本，提取以下结构化医疗信息，并以纯 JSON 格式输出（不要添加任何 markdown 代码块外部的多余文本）：
-
-【核心日期判定规则（必须严格遵守）】：
-1. 化验单/报告单上通常有多个日期。请【优先提取医生开单日期 / 申请日期 / 采样日期 / 检查日期】作为 "checkDate"（格式 YYYY-MM-DD）。
-2. 坚决不要使用后续的“报告审核日期”或“报告打印日期”（因为打印或出具可能延迟数天，但病程档案必须以开单就诊/采血检查当天为准）。
-3. 如果单据上同时有开单日期和打印日期，必须取开单日期。
-
-JSON 字段规范：
-{
-  "hospital": "医院名称（若未提及留空字符串）",
-  "department": "就诊科室（如内分泌科、消化内科）",
-  "doctorName": "开单/就诊医生姓名（若无留空）",
-  "checkDate": "开检查单日期/采样检查日期，格式必须为 YYYY-MM-DD（严禁取报告打印日期）",
-  "category": "检查大类（如：血液生化、血常规、尿常规、肝肾功能、超声影像、CT/MRI、胃肠镜、心电图、病理报告、随访记录）",
-  "doctorAdvice": "医生就诊医嘱或检查结论/诊断处置建议",
-  "items": [
-    {
-      "itemName": "项目标准名称（如：糖化血红蛋白）",
-      "value": "检测结果数值或定性结果（如：6.2 或 阴性）",
-      "unit": "计量单位（如：mmol/L, %, μmol/L）",
-      "referenceRange": "参考区间（如：4.0-6.0）",
-      "status": "normal(正常) | high(偏高/阳性) | low(偏低) | abnormal(异常/需复查)",
-      "category": "所属子类别（如：血糖指标、肝功能、脂质代谢）",
-      "notes": "异常提示或关键说明（若无留空）"
-    }
-  ],
-  "medicationChanges": [
-    {
-      "medicineName": "药名",
-      "changeType": "new(新开) | increase(加量) | decrease(减量) | stop(停药) | maintain(维持) | switch(换药)",
-      "dosage": "单次剂量（如：0.5g）",
-      "frequency": "用药频次（如：每日2次）",
-      "reason": "变更原因说明（若有）",
-      "notes": "用药注意事项"
-    }
-  ]
-}
-''';
-
-  /// 利用 Gemini 3.7 Flash 多模态视觉大模型直接分析图片
+  /// 使用 Google Gemini (默认 gemini-3.7-flash) 或自定义 OpenAI 兼容模型多模态直接识别化验单
   Future<AiAnalysisResult> analyzeImageWithGemini({
     required File imageFile,
     required AppSettings settings,
   }) async {
-    final apiKey = settings.geminiApiKey.trim();
-    if (apiKey.isEmpty) {
-      throw Exception('请先在【设置 -> 高级功能 -> AI 配置】中填入 Google Gemini API Key');
-    }
-
     final bytes = await imageFile.readAsBytes();
     final base64Image = base64Encode(bytes);
-    final modelName = settings.geminiModel.isNotEmpty
-        ? settings.geminiModel
-        : 'gemini-3.7-flash';
+
+    final model = settings.aiModel.isNotEmpty ? settings.aiModel : 'gemini-3.7-flash';
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customAiApiKey;
+
+    if (apiKey.isEmpty) {
+      throw Exception('请先在高级设置中配置 Gemini 或自定义 AI 的 API Key！');
+    }
+
+    final prompt = '''
+你是一位资深医疗化验单结构化识别专家。请深度分析这张检查单/化验单图片，并提取结构化 JSON 数据。
+
+【🚨 核心栏目归类硬性规则（绝对禁止拆分过细）】：
+1. 一张化验单必须且只能提取为一个统一的顶级单据大类名称（category），例如："血常规"、"血液生化全项"、"肝肾功能"、"尿液分析"、"凝血功能"、"甲状腺功能"、"超声影像报告" 等。
+2. 严禁把同一张化验单上的指标拆分成多个不同的小栏目！同一张单据上的所有检测指标（如生化单上的白蛋白、转氨酶、肌酐、尿酸、血糖、血脂）其 category 必须全部统一命名为该整张化验单的顶级大类名称！
+
+【🚨 开单日期提取权重硬性规则】：
+1. 第一优先级：提取医生【开单日期 / 申请日期 / 采样抽血日期 / 就诊日期】；
+2. 严禁使用延迟出具的【报告打印日期 / 审核日期】作为就诊日期。
+
+请严格返回如下 JSON 格式（不要输出 markdown 代码块外的内容）：
+{
+  "checkDate": "YYYY-MM-DD",
+  "hospital": "医院名称",
+  "department": "科室",
+  "doctorName": "开单医生",
+  "category": "该整张化验单的统一大类名称(如:血液生化全项/血常规/尿常规)",
+  "doctorAdvice": "化验单或病历上的医生诊断结论、医嘱或临床意见",
+  "items": [
+    {
+      "itemName": "指标名称(如: 空腹血糖)",
+      "value": "检测值(如: 6.2 或 阴性)",
+      "unit": "单位(如: mmol/L)",
+      "referenceRange": "参考区间(如: 3.9-6.1)",
+      "status": "normal(正常) | high(偏高) | low(偏低) | abnormal(阳性/异常)",
+      "category": "必须与整张化验单的统一大类名称完全一致",
+      "notes": "备注/临床意义"
+    }
+  ],
+  "medicationChanges": []
+}
+''';
 
     final url = Uri.parse(
-        '${settings.geminiBaseUrl}/v1beta/models/$modelName:generateContent?key=$apiKey');
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+    );
 
-    final payload = {
+    final requestBody = {
       "contents": [
         {
           "parts": [
-            {
-              "text": _systemPrompt +
-                  "\n请全面扫描识别并提取此化验单中的所有项目、指标、参考范围、异常状态、开单检查日期（优先提取开单/申请/采样日期）、医院与医嘱："
-            },
+            {"text": prompt},
             {
               "inline_data": {
                 "mime_type": "image/jpeg",
@@ -112,341 +99,172 @@ JSON 字段规范：
         }
       ],
       "generationConfig": {
-        "temperature": settings.aiTemperature,
-        "maxOutputTokens": settings.aiMaxTokens,
-        "responseMimeType": "application/json",
+        "response_mime_type": "application/json",
+        "temperature": 0.1,
       }
     };
 
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
+      body: jsonEncode(requestBody),
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Gemini API 调用失败 (${response.statusCode}): ${response.body}');
+      throw Exception('Gemini 接口请求失败 (${response.statusCode}): ${response.body}');
     }
 
-    final data = jsonDecode(response.body);
-    final contentText =
-        data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
-    return _parseJsonToResult(contentText);
-  }
-
-  /// 利用 AI 分析已提取的 OCR 文本
-  Future<AiAnalysisResult> analyzeTextWithAi({
-    required String ocrText,
-    required AppSettings settings,
-  }) async {
-    final provider = settings.aiProvider;
-
-    if (provider == 'gemini') {
-      return _analyzeTextGemini(ocrText, settings);
-    } else if (provider == 'deepseek') {
-      return _analyzeTextOpenAiCompatible(
-        text: ocrText,
-        baseUrl: settings.deepSeekBaseUrl,
-        apiKey: settings.deepSeekApiKey,
-        model: settings.deepSeekModel,
-        temperature: settings.aiTemperature,
-        maxTokens: settings.aiMaxTokens,
-      );
-    } else if (provider == 'openai') {
-      return _analyzeTextOpenAiCompatible(
-        text: ocrText,
-        baseUrl: settings.openAiBaseUrl,
-        apiKey: settings.openAiApiKey,
-        model: settings.openAiModel,
-        temperature: settings.aiTemperature,
-        maxTokens: settings.aiMaxTokens,
-      );
-    } else {
-      return _analyzeTextOpenAiCompatible(
-        text: ocrText,
-        baseUrl: settings.customBaseUrl,
-        apiKey: settings.customApiKey,
-        model: settings.customModel,
-        temperature: settings.aiTemperature,
-        maxTokens: settings.aiMaxTokens,
-      );
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final candidates = data['candidates'] as List?;
+    if (candidates == null || candidates.isEmpty) {
+      throw Exception('Gemini 未返回有效识别内容');
     }
+
+    final text = candidates[0]['content']['parts'][0]['text']?.toString() ?? '';
+    return _parseJsonResponse(text, imageFile.path);
   }
 
-  /// AI 智能总结与提炼医嘱建议
+  /// AI 智能总结医嘱与处置建议
   Future<String> summarizeAdviceWithAi({
     required List<CheckItem> items,
-    required List<MedicationChange> meds,
+    required List<MedicationAdjustment> meds,
     required String diseaseName,
     required String hospital,
     required String userNotes,
     required AppSettings settings,
   }) async {
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customAiApiKey;
+    if (apiKey.isEmpty) {
+      throw Exception('请先在高级设置中配置 AI API Key！');
+    }
+
     final abnormalItems = items.where((i) => i.status != 'normal').toList();
-    final itemsSummary = items
-        .map((i) =>
-            '- ${i.itemName}: ${i.value} ${i.unit} (参考值: ${i.referenceRange}) ${i.status != "normal" ? "[异常: " + i.status + "]" : ""}')
-        .join('\n');
-    final medsSummary = meds
-        .map((m) => '- ${m.medicineName}: ${m.dosage}, ${m.frequency} (调整原因: ${m.reason})')
-        .join('\n');
+    final itemsSummary = items.map((i) => '${i.itemName}: ${i.value} ${i.unit} (参考: ${i.referenceRange}) [${i.status}]').join('\n');
+    final medsSummary = meds.map((m) => '${m.medicineName}: ${m.dosage} ${m.frequency} (原因: ${m.reason})').join('\n');
 
     final prompt = '''
-你是一位专业的慢病管理专家与临床主治医生。请根据以下患者当次复查的完整检验数据与用药情况，生成一份清晰、条理分明、通俗易懂的【医生医嘱与综合健康管理建议】：
+你是一位资深慢病管理与全科医学专家。请根据以下患者的慢病复查检验指标结果与用药方案，为患者生成一份专业、清晰、易懂的【医生医嘱与健康管理建议总结】：
 
-【慢病背景】: $diseaseName
-【就诊医院】: ${hospital.isNotEmpty ? hospital : "三甲医院"}
-【异常检验项数量】: ${abnormalItems.length} 项
-【全部检验指标】:
+【患者慢病档案】：$diseaseName
+【就诊医院/机构】：$hospital
+【就诊与自述备注】：$userNotes
+【异常检验指标 (${abnormalItems.length}项)】：
+${abnormalItems.map((i) => '- ${i.itemName}: ${i.value} ${i.unit} (参考值: ${i.referenceRange}) - 状态: ${i.status}').join('\n')}
+
+【全部检验指标详情】：
 $itemsSummary
 
-【当前用药调整】:
-${medsSummary.isNotEmpty ? medsSummary : "无用药变更记录"}
+【当前用药方案调整】：
+$medsSummary
 
-【患者本次就诊备注】:
-${userNotes.isNotEmpty ? userNotes : "无特殊备注"}
-
-请直接输出整理后的医嘱内容（包含：1. 指标总体评估与异常分析；2. 用药与处置建议；3. 日常生活与饮食运动注意事项；4. 下次复查建议周期）。语言专业亲切，条理清晰，500字以内。
+请从以下几个方面给出条理分明的总结建议（直接给出纯文本或清晰标点的建议，语气专业温和）：
+1. 核心指标解读（重点分析异常项与疾病控制情况）
+2. 关键用药与服药注意事项（结合指标异常评估）
+3. 饮食、生活方式与日常监测要点
+4. 下次复查重点关注项目与建议周期
 ''';
 
-    if (settings.aiProvider == 'gemini') {
-      final apiKey = settings.geminiApiKey.trim();
-      if (apiKey.isEmpty) {
-        throw Exception('请先在高级设置中配置 Gemini API Key');
-      }
-      final modelName = settings.geminiModel.isNotEmpty
-          ? settings.geminiModel
-          : 'gemini-3.7-flash';
-      final url = Uri.parse(
-          '${settings.geminiBaseUrl}/v1beta/models/$modelName:generateContent?key=$apiKey');
-      final payload = {
-        "contents": [
-          {
-            "parts": [
-              {"text": prompt}
-            ]
-          }
-        ],
-        "generationConfig": {
-          "temperature": 0.3,
-          "maxOutputTokens": 2048,
-        }
-      };
-
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('AI 总结医嘱失败: ${response.body}');
-      }
-      final data = jsonDecode(response.body);
-      return data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
-    } else {
-      final apiKey = settings.aiProvider == 'deepseek'
-          ? settings.deepSeekApiKey
-          : (settings.aiProvider == 'openai'
-              ? settings.openAiApiKey
-              : settings.customApiKey);
-      final baseUrl = settings.aiProvider == 'deepseek'
-          ? settings.deepSeekBaseUrl
-          : (settings.aiProvider == 'openai'
-              ? settings.openAiBaseUrl
-              : settings.customBaseUrl);
-      final model = settings.aiProvider == 'deepseek'
-          ? settings.deepSeekModel
-          : (settings.aiProvider == 'openai'
-              ? settings.openAiModel
-              : settings.customModel);
-
-      String cleanBaseUrl = baseUrl.trim();
-      if (cleanBaseUrl.endsWith('/')) {
-        cleanBaseUrl = cleanBaseUrl.substring(0, cleanBaseUrl.length - 1);
-      }
-      final url = Uri.parse('$cleanBaseUrl/chat/completions');
-
-      final payload = {
-        "model": model,
-        "messages": [
-          {"role": "system", "content": "你是一位专业的慢病管理专家。"},
-          {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 2048,
-      };
-
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode(payload),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('AI 总结医嘱失败: ${response.body}');
-      }
-      final data = jsonDecode(utf8.decode(response.bodyBytes));
-      return data['choices']?[0]?['message']?['content'] ?? '';
-    }
-  }
-
-  Future<AiAnalysisResult> _analyzeTextGemini(
-      String text, AppSettings settings) async {
-    final apiKey = settings.geminiApiKey.trim();
-    if (apiKey.isEmpty) {
-      throw Exception('请先在高级设置中填入 Google Gemini API Key');
-    }
-
-    final modelName = settings.geminiModel.isNotEmpty
-        ? settings.geminiModel
-        : 'gemini-3.7-flash';
-
+    final model = settings.aiModel.isNotEmpty ? settings.aiModel : 'gemini-3.7-flash';
     final url = Uri.parse(
-        '${settings.geminiBaseUrl}/v1beta/models/$modelName:generateContent?key=$apiKey');
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+    );
 
-    final payload = {
+    final requestBody = {
       "contents": [
         {
-          "parts": [
-            {"text": "$_systemPrompt\n\n以下是待解析的化验单 OCR 原始文本：\n$text"}
-          ]
+          "parts": [{"text": prompt}]
         }
       ],
       "generationConfig": {
-        "temperature": settings.aiTemperature,
-        "maxOutputTokens": settings.aiMaxTokens,
-        "responseMimeType": "application/json",
+        "temperature": 0.3,
       }
     };
 
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
+      body: jsonEncode(requestBody),
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Gemini 文本解析失败 (${response.statusCode}): ${response.body}');
-    }
-
-    final data = jsonDecode(response.body);
-    final contentText =
-        data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
-    return _parseJsonToResult(contentText);
-  }
-
-  Future<AiAnalysisResult> _analyzeTextOpenAiCompatible({
-    required String text,
-    required String baseUrl,
-    required String apiKey,
-    required String model,
-    required double temperature,
-    required int maxTokens,
-  }) async {
-    if (apiKey.trim().isEmpty) {
-      throw Exception('API Key 未配置，请在高级设置中填写');
-    }
-
-    String cleanBaseUrl = baseUrl.trim();
-    if (cleanBaseUrl.endsWith('/')) {
-      cleanBaseUrl = cleanBaseUrl.substring(0, cleanBaseUrl.length - 1);
-    }
-    final url = Uri.parse('$cleanBaseUrl/chat/completions');
-
-    final payload = {
-      "model": model,
-      "messages": [
-        {"role": "system", "content": _systemPrompt},
-        {"role": "user", "content": "请解析以下化验单/检查单文本并返回 JSON：\n$text"}
-      ],
-      "temperature": temperature,
-      "max_tokens": maxTokens,
-    };
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode(payload),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('AI API 调用失败 (${response.statusCode}): ${response.body}');
+      throw Exception('AI 总结医嘱失败 (${response.statusCode}): ${response.body}');
     }
 
     final data = jsonDecode(utf8.decode(response.bodyBytes));
-    final content = data['choices']?[0]?['message']?['content'] ?? '';
-    return _parseJsonToResult(content);
+    final candidates = data['candidates'] as List?;
+    if (candidates == null || candidates.isEmpty) {
+      throw Exception('未生成有效医嘱建议');
+    }
+
+    return candidates[0]['content']['parts'][0]['text']?.toString().trim() ?? '';
   }
 
-  AiAnalysisResult _parseJsonToResult(String rawJson) {
-    String cleanJson = rawJson.trim();
-    if (cleanJson.startsWith('```json')) {
-      cleanJson = cleanJson.substring(7);
-    }
-    if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.substring(3);
-    }
-    if (cleanJson.endsWith('```')) {
-      cleanJson = cleanJson.substring(0, cleanJson.length - 3);
-    }
-    cleanJson = cleanJson.trim();
-
-    final map = jsonDecode(cleanJson);
-    final uuid = const Uuid();
-
-    List<CheckItem> items = [];
-    if (map['items'] != null && map['items'] is List) {
-      for (var itemMap in map['items']) {
-        items.add(CheckItem(
-          id: uuid.v4(),
-          itemName: itemMap['itemName']?.toString() ?? '',
-          value: itemMap['value']?.toString() ?? '',
-          unit: itemMap['unit']?.toString() ?? '',
-          referenceRange: itemMap['referenceRange']?.toString() ?? '',
-          status: itemMap['status']?.toString() ?? 'normal',
-          category: itemMap['category']?.toString() ?? '常规检验',
-          notes: itemMap['notes']?.toString() ?? '',
-        ));
+  AiAnalysisResult _parseJsonResponse(String jsonString, String imagePath) {
+    try {
+      String cleanJson = jsonString.trim();
+      if (cleanJson.startsWith('```json')) {
+        cleanJson = cleanJson.substring(7);
       }
-    }
-
-    List<MedicationChange> meds = [];
-    if (map['medicationChanges'] != null && map['medicationChanges'] is List) {
-      for (var medMap in map['medicationChanges']) {
-        meds.add(MedicationChange(
-          id: uuid.v4(),
-          medicineName: medMap['medicineName']?.toString() ?? '',
-          changeType: medMap['changeType']?.toString() ?? 'maintain',
-          dosage: medMap['dosage']?.toString() ?? '',
-          frequency: medMap['frequency']?.toString() ?? '',
-          reason: medMap['reason']?.toString() ?? '',
-          notes: medMap['notes']?.toString() ?? '',
-        ));
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.substring(3);
       }
-    }
+      if (cleanJson.endsWith('```')) {
+        cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+      }
+      cleanJson = cleanJson.trim();
 
-    DateTime? checkDate;
-    if (map['checkDate'] != null) {
-      checkDate = DateTime.tryParse(map['checkDate'].toString());
-    }
+      final map = jsonDecode(cleanJson);
 
-    return AiAnalysisResult(
-      hospital: map['hospital']?.toString() ?? '',
-      department: map['department']?.toString() ?? '',
-      doctorName: map['doctorName']?.toString() ?? '',
-      checkDate: checkDate ?? DateTime.now(),
-      category: map['category']?.toString() ?? '血液生化',
-      doctorAdvice: map['doctorAdvice']?.toString() ?? '',
-      items: items,
-      medicationChanges: meds,
-      rawResponse: rawJson,
-    );
+      DateTime? checkDate;
+      if (map['checkDate'] != null && map['checkDate'].toString().isNotEmpty) {
+        checkDate = DateTime.tryParse(map['checkDate'].toString());
+      }
+
+      final singleMainCategory = map['category']?.toString().trim() ?? '常规化验';
+
+      List<CheckItem> items = [];
+      if (map['items'] != null && map['items'] is List) {
+        for (var i in map['items']) {
+          items.add(CheckItem(
+            id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + items.length.toString(),
+            itemName: i['itemName']?.toString() ?? '',
+            value: i['value']?.toString() ?? '',
+            unit: i['unit']?.toString() ?? '',
+            referenceRange: i['referenceRange']?.toString() ?? '',
+            status: i['status']?.toString() ?? 'normal',
+            // 确保单张化验单上的所有指标统归属于该单据的大类名称，拒绝碎片化细分
+            category: singleMainCategory,
+            sourceImagePath: imagePath,
+            notes: i['notes']?.toString() ?? '',
+          ));
+        }
+      }
+
+      List<MedicationAdjustment> meds = [];
+      if (map['medicationChanges'] != null && map['medicationChanges'] is List) {
+        for (var m in map['medicationChanges']) {
+          meds.add(MedicationAdjustment(
+            id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + meds.length.toString(),
+            medicineName: m['medicineName']?.toString() ?? '',
+            dosage: m['dosage']?.toString() ?? '',
+            frequency: m['frequency']?.toString() ?? '',
+            reason: m['reason']?.toString() ?? '',
+          ));
+        }
+      }
+
+      return AiAnalysisResult(
+        checkDate: checkDate,
+        hospital: map['hospital']?.toString() ?? '',
+        department: map['department']?.toString() ?? '',
+        doctorName: map['doctorName']?.toString() ?? '',
+        category: singleMainCategory,
+        doctorAdvice: map['doctorAdvice']?.toString() ?? '',
+        items: items,
+        medicationChanges: meds,
+      );
+    } catch (e) {
+      throw Exception('解析化验单 JSON 失败: $e\n原始返回: $jsonString');
+    }
   }
 }

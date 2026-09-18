@@ -49,10 +49,10 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     final disease = prov.getDiseaseById(record.diseaseId);
 
-    // 1. 按检查项目大类/单据分类进行分栏目聚合
+    // 1. 按检查项目大类/单据分类进行分栏目聚合 (以单张化验单的大类为基准，避免碎片化过细拆分)
     final Map<String, List<CheckItem>> categorizedItems = {};
     for (var item in record.items) {
-      final cat = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验项目';
+      final cat = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验报告';
       categorizedItems.putIfAbsent(cat, () => []).add(item);
     }
 
@@ -139,7 +139,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            '共 ${categoryNames.length} 个检验栏目',
+                            '共 ${categoryNames.length} 个检验单栏目',
                             style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w600, fontSize: 12),
                           ),
                         ),
@@ -203,10 +203,22 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 横向滑动选择检查栏目 (OCR 命名 + 可修改名称)
-            const Text(
-              '检查项目栏目 (横向滑动选择)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            // 横向滑动选择检查栏目 (以整张单据为准，支持重命名与一键合并)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '检查报告单栏目 (横向滑动选择)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                if (categoryNames.length > 1)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    icon: const Icon(Icons.merge_type, size: 14, color: Colors.blueAccent),
+                    label: const Text('合并栏目', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _mergeCategoryDialog(context, currentCategory, categoryNames, record, prov),
+                  ),
+              ],
             ),
             const SizedBox(height: 10),
 
@@ -315,28 +327,33 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 栏目标题行：支持点击笔形图标重命名栏目名称
+                      // 栏目标题行：支持点击笔形图标重命名与合并
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 14,
-                                backgroundColor: Colors.blue.withOpacity(0.15),
-                                child: const Icon(Icons.science, size: 16, color: Colors.blueAccent),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                currentCategory,
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.drive_file_rename_outline, size: 18, color: Colors.blueAccent),
-                                tooltip: '重命名此栏目名称',
-                                onPressed: () => _renameCategoryDialog(context, currentCategory, record, prov),
-                              ),
-                            ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: Colors.blue.withOpacity(0.15),
+                                  child: const Icon(Icons.description, size: 16, color: Colors.blueAccent),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    currentCategory,
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.drive_file_rename_outline, size: 18, color: Colors.blueAccent),
+                                  tooltip: '重命名此栏目名称',
+                                  onPressed: () => _renameCategoryDialog(context, currentCategory, record, prov),
+                                ),
+                              ],
+                            ),
                           ),
                           if (abnormalCount > 0)
                             Container(
@@ -367,7 +384,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const Divider(height: 20),
 
-                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”，支持横向左右滑动
+                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -398,7 +415,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const SizedBox(height: 6),
 
-                      // 缩略图区域：点击打开无黑边遮挡、支持左右滑动切换图片与栏目的画廊
+                      // 缩略图区域：点击打开无黑边遮挡、支持左右滑动切换图片与栏目的全屏画廊
                       if (displayImages.isNotEmpty)
                         SizedBox(
                           height: 110,
@@ -457,7 +474,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       const SizedBox(height: 14),
 
                       // 栏目下的检验指标结果表格
-                      const Text('📊 检验指标结果：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                      Text('📊 $currentCategory 检验指标 (${currentItems.length}项)：', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
                       const SizedBox(height: 6),
                       ListView.separated(
                         shrinkWrap: true,
@@ -635,13 +652,13 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重命名栏目名称'),
+        title: const Text('重命名报告单栏目'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: '栏目名称',
-            hintText: '例如：血常规、肝功能全套、生化全项',
+            hintText: '例如：血液生化全套、血常规报告、尿常规分析',
             border: OutlineInputBorder(),
           ),
         ),
@@ -663,6 +680,58 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             child: const Text('保存'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _mergeCategoryDialog(BuildContext context, String currentCategory, List<String> allCategories, CheckRecord record, RecordsProvider prov) {
+    final otherCategories = allCategories.where((c) => c != currentCategory).toList();
+    if (otherCategories.isEmpty) return;
+
+    String targetCategory = otherCategories.first;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('合并检查单栏目'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('将当前栏目【$currentCategory】内的所有检查指标合并并入到：', style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: targetCategory,
+                decoration: const InputDecoration(labelText: '目标报告单栏目', border: OutlineInputBorder()),
+                items: otherCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setDialogState(() => targetCategory = val);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              const Text('合并后，两者的指标将完整合并归入同一个大栏目下，方便统一查看。', style: TextStyle(color: Colors.grey, fontSize: 11)),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            ElevatedButton(
+              onPressed: () async {
+                await prov.mergeCategoriesInRecord(record.id, currentCategory, targetCategory);
+                Navigator.pop(ctx);
+                if (mounted) {
+                  setState(() => _selectedCategoryIndex = 0);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('✅ 已将【$currentCategory】成功合并至【$targetCategory】！')),
+                  );
+                }
+              },
+              child: const Text('确认合并'),
+            ),
+          ],
+        ),
       ),
     );
   }

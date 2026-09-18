@@ -102,21 +102,19 @@ class RecordsProvider with ChangeNotifier {
 
     if (sortOrder == 'date_desc') {
       list.sort((a, b) => b.checkDate.compareTo(a.checkDate));
-    } else if (sortOrder == 'date_asc') {
+    } else {
       list.sort((a, b) => a.checkDate.compareTo(b.checkDate));
-    } else if (sortOrder == 'abnormal_first') {
-      list.sort((a, b) => b.abnormalCount.compareTo(a.abnormalCount));
     }
 
     return list;
   }
 
-  void setSearchQuery(String q) {
-    _searchQuery = q;
+  void setSearchQuery(String query) {
+    _searchQuery = query;
     notifyListeners();
   }
 
-  void setSelectedDisease(String id) {
+  void setSelectedDiseaseId(String id) {
     _selectedDiseaseId = id;
     notifyListeners();
   }
@@ -126,98 +124,7 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- 核心：根据检查单日期自动合并到同一档案 ---
-  Future<CheckRecord> mergeOrSaveRecordByDate(CheckRecord newRecord) async {
-    final dateStr = DateFormat('yyyy-MM-dd').format(newRecord.checkDate);
-
-    // 查找同一天且同疾病的已有复查档案
-    final existingIdx = _records.indexWhere((r) =>
-        r.diseaseId == newRecord.diseaseId &&
-        DateFormat('yyyy-MM-dd').format(r.checkDate) == dateStr);
-
-    if (existingIdx >= 0) {
-      final existing = _records[existingIdx];
-
-      // 1. 合并化验单图片（去重）
-      final Set<String> mergedImgs = Set.from(existing.imagePaths);
-      mergedImgs.addAll(newRecord.imagePaths);
-      existing.imagePaths = mergedImgs.toList();
-
-      // 2. 合并结构化检验指标 (同名项目若数值不同则更新，不存在则追加)
-      for (var newItem in newRecord.items) {
-        final itIdx = existing.items.indexWhere(
-            (it) => it.itemName.trim() == newItem.itemName.trim());
-        if (itIdx >= 0) {
-          existing.items[itIdx] = newItem;
-        } else {
-          existing.items.add(newItem);
-        }
-      }
-
-      // 3. 合并用药变更
-      for (var newMed in newRecord.medicationChanges) {
-        final medIdx = existing.medicationChanges.indexWhere(
-            (m) => m.medicineName.trim() == newMed.medicineName.trim());
-        if (medIdx >= 0) {
-          existing.medicationChanges[medIdx] = newMed;
-        } else {
-          existing.medicationChanges.add(newMed);
-        }
-      }
-
-      // 4. 合并补充医院/科室/医生信息
-      if (existing.hospital.isEmpty && newRecord.hospital.isNotEmpty) {
-        existing.hospital = newRecord.hospital;
-      }
-      if (existing.department.isEmpty && newRecord.department.isNotEmpty) {
-        existing.department = newRecord.department;
-      }
-      if (existing.doctorName.isEmpty && newRecord.doctorName.isNotEmpty) {
-        existing.doctorName = newRecord.doctorName;
-      }
-
-      // 5. 合并医嘱
-      if (newRecord.doctorAdvice.isNotEmpty) {
-        if (existing.doctorAdvice.isEmpty) {
-          existing.doctorAdvice = newRecord.doctorAdvice;
-        } else if (!existing.doctorAdvice.contains(newRecord.doctorAdvice)) {
-          existing.doctorAdvice += '\n${newRecord.doctorAdvice}';
-        }
-      }
-
-      existing.updatedAt = DateTime.now();
-      await StorageService.instance.saveRecord(existing);
-      _records[existingIdx] = existing;
-      notifyListeners();
-      return existing;
-    } else {
-      // 独立一天：新建档案
-      await StorageService.instance.saveRecord(newRecord);
-      _records.insert(0, newRecord);
-      notifyListeners();
-      return newRecord;
-    }
-  }
-
-  // --- 疾病操作 ---
-  Future<void> addOrUpdateDisease(Disease d) async {
-    await StorageService.instance.saveDisease(d);
-    final idx = _diseases.indexWhere((item) => item.id == d.id);
-    if (idx >= 0) {
-      _diseases[idx] = d;
-    } else {
-      _diseases.insert(0, d);
-    }
-    notifyListeners();
-  }
-
-  Future<void> deleteDisease(String id) async {
-    await StorageService.instance.deleteDisease(id);
-    _diseases.removeWhere((item) => item.id == id);
-    _records.removeWhere((item) => item.diseaseId == id);
-    notifyListeners();
-  }
-
+  // --- 疾病管理 ---
   Disease? getDiseaseById(String id) {
     try {
       return _diseases.firstWhere((d) => d.id == id);
@@ -226,25 +133,125 @@ class RecordsProvider with ChangeNotifier {
     }
   }
 
-  // --- 记录操作 ---
-  Future<void> saveRecord(CheckRecord r) async {
-    await StorageService.instance.saveRecord(r);
-    final idx = _records.indexWhere((item) => item.id == r.id);
+  Future<void> saveDisease(Disease disease) async {
+    await StorageService.instance.saveDisease(disease);
+    final idx = _diseases.indexWhere((d) => d.id == disease.id);
     if (idx >= 0) {
-      _records[idx] = r;
+      _diseases[idx] = disease;
     } else {
-      _records.insert(0, r);
+      _diseases.add(disease);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteDisease(String id) async {
+    await StorageService.instance.deleteDisease(id);
+    _diseases.removeWhere((d) => d.id == id);
+    notifyListeners();
+  }
+
+  // --- 记录管理 ---
+  Future<void> saveRecord(CheckRecord record) async {
+    await StorageService.instance.saveRecord(record);
+    final idx = _records.indexWhere((r) => r.id == record.id);
+    if (idx >= 0) {
+      _records[idx] = record;
+    } else {
+      _records.add(record);
     }
     notifyListeners();
   }
 
   Future<void> deleteRecord(String id) async {
     await StorageService.instance.deleteRecord(id);
-    _records.removeWhere((item) => item.id == id);
+    _records.removeWhere((r) => r.id == id);
     notifyListeners();
   }
 
-  // --- 自定义检查项目分类分组管理 ---
+  /// 严格按照医生开单日期/检查日期进行自动合并或归档
+  Future<void> mergeOrSaveRecordByDate(CheckRecord newRecord) async {
+    final newDateStr = DateFormat('yyyy-MM-dd').format(newRecord.checkDate);
+
+    CheckRecord? existing;
+    for (var r in _records) {
+      final curDateStr = DateFormat('yyyy-MM-dd').format(r.checkDate);
+      if (curDateStr == newDateStr) {
+        if (newRecord.diseaseId.isEmpty || r.diseaseId == newRecord.diseaseId) {
+          existing = r;
+          break;
+        }
+      }
+    }
+
+    if (existing == null) {
+      await saveRecord(newRecord);
+      return;
+    }
+
+    // 存在同日记录，执行合并
+    final Set<String> allImages = Set.from(existing.imagePaths);
+    for (var img in newRecord.imagePaths) {
+      if (img.isNotEmpty) allImages.add(img);
+    }
+    existing.imagePaths = allImages.toList();
+
+    // 合并指标
+    final Map<String, CheckItem> itemMap = {};
+    for (var it in existing.items) {
+      itemMap[it.itemName.trim()] = it;
+    }
+    for (var it in newRecord.items) {
+      final key = it.itemName.trim();
+      if (itemMap.containsKey(key)) {
+        final ex = itemMap[key]!;
+        if (ex.value != it.value) {
+          itemMap[key] = it;
+        }
+      } else {
+        itemMap[key] = it;
+      }
+    }
+    existing.items = itemMap.values.toList();
+
+    // 合并医嘱
+    if (newRecord.doctorAdvice.isNotEmpty) {
+      if (existing.doctorAdvice.isEmpty) {
+        existing.doctorAdvice = newRecord.doctorAdvice;
+      } else if (!existing.doctorAdvice.contains(newRecord.doctorAdvice)) {
+        existing.doctorAdvice = '${existing.doctorAdvice}\n${newRecord.doctorAdvice}';
+      }
+    }
+
+    // 医院科室信息补齐
+    if (existing.hospital.isEmpty && newRecord.hospital.isNotEmpty) {
+      existing.hospital = newRecord.hospital;
+    }
+    if (existing.department.isEmpty && newRecord.department.isNotEmpty) {
+      existing.department = newRecord.department;
+    }
+    if (existing.doctorName.isEmpty && newRecord.doctorName.isNotEmpty) {
+      existing.doctorName = newRecord.doctorName;
+    }
+
+    await saveRecord(existing);
+  }
+
+  /// 一键合并档案内的两个检查栏目（将 fromCategory 的所有指标合并入 toCategory）
+  Future<void> mergeCategoriesInRecord(String recordId, String fromCategory, String toCategory) async {
+    final idx = _records.indexWhere((r) => r.id == recordId);
+    if (idx < 0) return;
+
+    final record = _records[idx];
+    for (var it in record.items) {
+      if (it.category.trim() == fromCategory.trim()) {
+        it.category = toCategory.trim();
+      }
+    }
+
+    await saveRecord(record);
+  }
+
+  // --- 分类组与整合管理 ---
   Future<void> saveCategoryGroup(CategoryGroup group) async {
     await StorageService.instance.saveCategoryGroup(group);
     final idx = _categoryGroups.indexWhere((g) => g.id == group.id);
@@ -262,9 +269,7 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 将指定的 OCR 指标移动/整合至指定的自定义分类组中
   Future<void> moveItemToGroup(String itemName, String targetGroupId) async {
-    // 先从其他所有组中移除该项目
     for (var g in _categoryGroups) {
       if (g.matchedItemNames.contains(itemName)) {
         g.matchedItemNames.remove(itemName);
@@ -272,7 +277,6 @@ class RecordsProvider with ChangeNotifier {
       }
     }
 
-    // 添加到目标组
     if (targetGroupId.isNotEmpty) {
       final target = _categoryGroups.firstWhere((g) => g.id == targetGroupId);
       if (!target.matchedItemNames.contains(itemName)) {
@@ -283,7 +287,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- 提取所有真实 OCR 整理出来的检验项目名称 ---
   List<String> getAllItemNames() {
     final Set<String> names = {};
     for (var r in _records) {
@@ -296,7 +299,6 @@ class RecordsProvider with ChangeNotifier {
     return names.toList()..sort();
   }
 
-  // --- 获取指定指标的历史走势数据 ---
   List<MetricHistoryPoint> getMetricHistory(String itemName) {
     final List<MetricHistoryPoint> points = [];
     final target = itemName.trim().toLowerCase();
