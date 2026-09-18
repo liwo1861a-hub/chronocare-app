@@ -144,6 +144,10 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> addOrUpdateDisease(Disease disease) async {
+    await saveDisease(disease);
+  }
+
   Future<void> deleteDisease(String id) async {
     await StorageService.instance.deleteDisease(id);
     _diseases.removeWhere((d) => d.id == id);

@@ -13,7 +13,8 @@ class AiAnalysisResult {
   final String category; // 顶级检查单据大类名称
   final String doctorAdvice;
   final List<CheckItem> items;
-  final List<MedicationAdjustment> medicationChanges;
+  final List<MedicationChange> medicationChanges;
+  final String rawResponse;
 
   AiAnalysisResult({
     this.checkDate,
@@ -24,6 +25,7 @@ class AiAnalysisResult {
     this.doctorAdvice = '',
     this.items = const [],
     this.medicationChanges = const [],
+    this.rawResponse = '',
   });
 }
 
@@ -39,8 +41,8 @@ class AiService {
     final bytes = await imageFile.readAsBytes();
     final base64Image = base64Encode(bytes);
 
-    final model = settings.aiModel.isNotEmpty ? settings.aiModel : 'gemini-3.7-flash';
-    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customAiApiKey;
+    final model = settings.geminiModel.isNotEmpty ? settings.geminiModel : 'gemini-3.7-flash';
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customApiKey;
 
     if (apiKey.isEmpty) {
       throw Exception('请先在高级设置中配置 Gemini 或自定义 AI 的 API Key！');
@@ -127,13 +129,13 @@ class AiService {
   /// AI 智能总结医嘱与处置建议
   Future<String> summarizeAdviceWithAi({
     required List<CheckItem> items,
-    required List<MedicationAdjustment> meds,
+    required List<MedicationChange> meds,
     required String diseaseName,
     required String hospital,
     required String userNotes,
     required AppSettings settings,
   }) async {
-    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customAiApiKey;
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customApiKey;
     if (apiKey.isEmpty) {
       throw Exception('请先在高级设置中配置 AI API Key！');
     }
@@ -164,7 +166,7 @@ $medsSummary
 4. 下次复查重点关注项目与建议周期
 ''';
 
-    final model = settings.aiModel.isNotEmpty ? settings.aiModel : 'gemini-3.7-flash';
+    final model = settings.geminiModel.isNotEmpty ? settings.geminiModel : 'gemini-3.7-flash';
     final url = Uri.parse(
       'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
     );
@@ -240,10 +242,10 @@ $medsSummary
         }
       }
 
-      List<MedicationAdjustment> meds = [];
+      List<MedicationChange> meds = [];
       if (map['medicationChanges'] != null && map['medicationChanges'] is List) {
         for (var m in map['medicationChanges']) {
-          meds.add(MedicationAdjustment(
+          meds.add(MedicationChange(
             id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + meds.length.toString(),
             medicineName: m['medicineName']?.toString() ?? '',
             dosage: m['dosage']?.toString() ?? '',
@@ -262,6 +264,7 @@ $medsSummary
         doctorAdvice: map['doctorAdvice']?.toString() ?? '',
         items: items,
         medicationChanges: meds,
+        rawResponse: jsonString,
       );
     } catch (e) {
       throw Exception('解析化验单 JSON 失败: $e\n原始返回: $jsonString');
