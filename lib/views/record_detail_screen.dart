@@ -9,6 +9,7 @@ import '../models/record.dart';
 import '../models/check_item.dart';
 import '../services/ai_service.dart';
 import 'record_edit_screen.dart';
+import 'photo_gallery_viewer.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String recordId;
@@ -63,10 +64,24 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     final currentCategory = categoryNames.isNotEmpty ? categoryNames[_selectedCategoryIndex] : '常规化验';
     final currentItems = categorizedItems[currentCategory] ?? [];
 
-    // 2. 收集当前栏目对应的化验单图片
-    final Set<String> currentCategoryImages = {};
+    // 2. 构建图片路径 -> 对应栏目名称映射 (用于左右滑动无缝联动切换)
+    final Map<String, String> imageCategoryMap = {};
+    for (var item in record.items) {
+      if (item.sourceImagePath.isNotEmpty) {
+        imageCategoryMap[item.sourceImagePath] = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验';
+      }
+    }
+    // 如果某些图片未在 item 中记录，则默认绑定到对应栏目或首栏目
+    for (var imgPath in record.imagePaths) {
+      if (!imageCategoryMap.containsKey(imgPath)) {
+        imageCategoryMap[imgPath] = currentCategory;
+      }
+    }
+
+    // 3. 收集当前栏目对应的化验单图片
+    final List<String> currentCategoryImages = [];
     for (var it in currentItems) {
-      if (it.sourceImagePath.isNotEmpty) {
+      if (it.sourceImagePath.isNotEmpty && !currentCategoryImages.contains(it.sourceImagePath)) {
         currentCategoryImages.add(it.sourceImagePath);
       }
     }
@@ -78,7 +93,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     // 根据模式决定展示哪些图片
     final List<String> displayImages = _showOnlyCurrentCategoryImages
-        ? currentCategoryImages.toList()
+        ? currentCategoryImages
         : record.imagePaths;
 
     final abnormalCount = currentItems.where((i) => i.status != 'normal').length;
@@ -190,7 +205,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 核心重构：横向滑动选择检查栏目 (OCR 命名 + 可修改名称)
+            // 横向滑动选择检查栏目 (OCR 命名 + 可修改名称)
             const Text(
               '检查项目栏目 (横向滑动选择)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -205,7 +220,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                 ),
               )
             else ...[
-              // 横向选择栏目条 (Horizontal Scroll Selector)
+              // 横向选择栏目条
               SizedBox(
                 height: 46,
                 child: ListView.separated(
@@ -354,7 +369,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const Divider(height: 20),
 
-                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”
+                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”，支持横向左右滑动
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -385,6 +400,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const SizedBox(height: 6),
 
+                      // 缩略图区域：点击打开无黑边遮挡、支持左右滑动切换图片与栏目的画廊
                       if (displayImages.isNotEmpty)
                         SizedBox(
                           height: 110,
@@ -395,13 +411,24 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                               final imgPath = displayImages[imgIdx];
                               return GestureDetector(
                                 onTap: () {
+                                  // 打开全新沉浸式全屏画廊浏览器
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => Scaffold(
-                                        appBar: AppBar(title: Text('$currentCategory 原图 #${imgIdx + 1}')),
-                                        backgroundColor: Colors.black,
-                                        body: Center(child: InteractiveViewer(child: Image.file(File(imgPath)))),
+                                      builder: (_) => PhotoGalleryViewer(
+                                        imagePaths: record.imagePaths,
+                                        initialIndex: record.imagePaths.indexOf(imgPath) >= 0
+                                            ? record.imagePaths.indexOf(imgPath)
+                                            : 0,
+                                        imageCategoryMap: imageCategoryMap,
+                                        onPageChanged: (newIdx, catName) {
+                                          if (catName != null) {
+                                            final cIdx = categoryNames.indexOf(catName);
+                                            if (cIdx >= 0 && mounted) {
+                                              setState(() => _selectedCategoryIndex = cIdx);
+                                            }
+                                          }
+                                        },
                                       ),
                                     ),
                                   );
@@ -496,10 +523,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                                   ),
                                 ),
                               ],
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
                     ],
                   ),
                 ),
