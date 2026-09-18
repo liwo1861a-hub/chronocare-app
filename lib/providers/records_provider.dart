@@ -9,14 +9,16 @@ import '../services/storage_service.dart';
 class MetricHistoryPoint {
   final DateTime date;
   final String hospital;
-  final double value;
-  final String valueStr;
+  final double value; // 数值型或定性量化值 (阴性=0, ±=0.5, +=1, 2+=2, 3+=3, 阳性=1)
+  final String valueStr; // 原始文本结果 (如 "阴性", "2+", "未见异常", "轻度改变")
   final String unit;
-  final String status;
+  final String status; // 'normal', 'high', 'low', 'abnormal'
   final String notes;
   final String recordId;
-  final String parentCategory; // 所属大项目/报告单名称 (如: 血液生化全项)
+  final String parentCategory; // 所属大项目/报告单名称 (如: 血液生化全项, 尿液常规)
   final String diseaseName;
+  final bool isQualitative; // 是否为定性/文本型项目
+  final String qualitativeChange; // 与上次比对判定 (如: "转阴 🟢", "转阳 🔴", "好转 🔻", "持平 ⚪")
 
   MetricHistoryPoint({
     required this.date,
@@ -29,6 +31,8 @@ class MetricHistoryPoint {
     required this.recordId,
     required this.parentCategory,
     this.diseaseName = '',
+    this.isQualitative = false,
+    this.qualitativeChange = '',
   });
 }
 
@@ -284,7 +288,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 提取所有指标名称（无论正常、偏高、偏低还是自定义，100% 全量包含）
   List<String> getAllItemNames() {
     final Set<String> names = {};
     for (var r in _records) {
@@ -297,16 +300,15 @@ class RecordsProvider with ChangeNotifier {
     return names.toList()..sort();
   }
 
-  /// 关键词模糊搜索指标名称
   List<String> searchItemNames(String query) {
     if (query.trim().isEmpty) return getAllItemNames();
     final q = query.trim().toLowerCase();
     return getAllItemNames().where((name) => name.toLowerCase().contains(q)).toList();
   }
 
-  /// 获取指定指标的历史走势数据（包含正常指标与异常指标，指向所在大项目）
+  /// 获取指定指标的历史走势数据（包含数值型与定性/文字型，100% 支持时序比对）
   List<MetricHistoryPoint> getMetricHistory(String itemName) {
-    final List<MetricHistoryPoint> points = [];
+    final List<MetricHistoryPoint> rawPoints = [];
     final target = itemName.trim().toLowerCase();
 
     for (var r in _records) {
@@ -314,30 +316,90 @@ class RecordsProvider with ChangeNotifier {
       for (var it in r.items) {
         if (it.itemName.trim().toLowerCase() == target) {
           double? val = it.numericValue;
+          bool isQualitative = false;
+
+          // 尝试数值解析
           if (val == null) {
             final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(it.value);
-            if (match != null) val = double.tryParse(match.group(0)!);
+            if (match != null) {
+              val = double.tryParse(match.group(0)!);
+            }
           }
 
-          if (val != null) {
-            points.add(MetricHistoryPoint(
-              date: r.checkDate,
-              hospital: r.hospital.isNotEmpty ? r.hospital : '未注明医院',
-              value: val,
-              valueStr: it.value,
-              unit: it.unit,
-              status: it.status,
-              notes: it.notes,
-              recordId: r.id,
-              parentCategory: it.category.isNotEmpty ? it.category : (r.category.isNotEmpty ? r.category : '常规化验单'),
-              diseaseName: dis?.name ?? '',
-            ));
+          // 定性/阴阳性/加号/文字结果量化映射
+          if (val == null) {
+            isQualitative = true;
+            final vStr = it.value.trim().toLowerCase();
+            if (vStr.contains('阴') || vStr.contains('(-)') || vStr == '-' || vStr.contains('未见') || vStr.contains('正常')) {
+              val = 0.0;
+            } else if (vStr.contains('±') || vStr.contains('弱阳') || vStr.contains('可疑')) {
+              val = 0.5;
+            } else if (vStr.contains('4+') || vStr.contains('++++')) {
+              val = 4.0;
+            } else if (vStr.contains('3+') || vStr.contains('+++')) {
+              val = 3.0;
+            } else if (vStr.contains('2+') || vStr.contains('++')) {
+              val = 2.0;
+            } else if (vStr.contains('1+') || vStr.contains('+') || vStr.contains('阳') || vStr.contains('异常')) {
+              val = 1.0;
+            } else {
+              val = 0.0; // 纯文本描述赋默认基准
+            }
           }
+
+          rawPoints.add(MetricHistoryPoint(
+            date: r.checkDate,
+            hospital: r.hospital.isNotEmpty ? r.hospital : '未注明医院',
+            value: val,
+            valueStr: it.value.isNotEmpty ? it.value : '未注明',
+            unit: it.unit,
+            status: it.status,
+            notes: it.notes,
+            recordId: r.id,
+            parentCategory: it.category.isNotEmpty ? it.category : (r.category.isNotEmpty ? r.category : '常规化验单'),
+            diseaseName: dis?.name ?? '',
+            isQualitative: isQualitative,
+          ));
         }
       }
     }
 
-    points.sort((a, b) => a.date.compareTo(b.date));
-    return points;
+    rawPoints.sort((a, b) => a.date.compareTo(b.date));
+
+    // 计算相邻复查的定性转归判定 (如: 转阴, 转阳, 加重, 好转, 稳定)
+    final List<MetricHistoryPoint> finalPoints = [];
+    for (int i = 0; i < rawPoints.length; i++) {
+      final cur = rawPoints[i];
+      String change = '';
+      if (i > 0) {
+        final prev = rawPoints[i - 1];
+        if (cur.isQualitative || prev.isQualitative) {
+          if (cur.value < prev.value) {
+            change = cur.value == 0 ? '转阴 🟢' : '好转/减弱 🔻';
+          } else if (cur.value > prev.value) {
+            change = prev.value == 0 ? '转阳 🔴' : '加重/增强 🔺';
+          } else {
+            change = cur.value == 0 ? '持续阴性 ⚪' : '维持原样 ⚪';
+          }
+        }
+      }
+
+      finalPoints.add(MetricHistoryPoint(
+        date: cur.date,
+        hospital: cur.hospital,
+        value: cur.value,
+        valueStr: cur.valueStr,
+        unit: cur.unit,
+        status: cur.status,
+        notes: cur.notes,
+        recordId: cur.recordId,
+        parentCategory: cur.parentCategory,
+        diseaseName: cur.diseaseName,
+        isQualitative: cur.isQualitative,
+        qualitativeChange: change,
+      ));
+    }
+
+    return finalPoints;
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -48,6 +49,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     }
 
     final history = prov.getMetricHistory(_selectedItemName!);
+    final bool isQualitativeProject = history.any((h) => h.isQualitative);
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -64,7 +66,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                 child: TextField(
                   controller: _searchCtrl,
                   decoration: InputDecoration(
-                    hintText: '输入关键词搜索单独指标 (如: 肌酐、血糖、转氨酶、HbA1c)...',
+                    hintText: '输入关键词搜索单独指标 (如: 尿蛋白、乙肝、肌酐、血糖、甲状腺)...',
                     hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
                     prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
                     suffixIcon: _searchKeyword.isNotEmpty
@@ -132,14 +134,14 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                       children: [
                         const Icon(Icons.info_outline, color: Colors.grey, size: 36),
                         const SizedBox(height: 8),
-                        Text('【$_selectedItemName】暂无数值型历史记录', style: const TextStyle(color: Colors.grey)),
+                        Text('【$_selectedItemName】暂无历史记录', style: const TextStyle(color: Colors.grey)),
                       ],
                     ),
                   ),
                 ),
               )
             else ...[
-              // 2. 走势折线图卡片 (支持所有正常与异常指标)
+              // 2. 走势图卡片 (数值型连续折线图 或 定性/阴阳性阶梯状态图)
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -153,14 +155,14 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                         children: [
                           Row(
                             children: [
-                              const CircleAvatar(
+                              CircleAvatar(
                                 radius: 14,
-                                backgroundColor: Colors.blueAccent,
-                                child: Icon(Icons.show_chart, size: 16, color: Colors.white),
+                                backgroundColor: isQualitativeProject ? Colors.teal : Colors.blueAccent,
+                                child: Icon(isQualitativeProject ? Icons.compare_arrows : Icons.show_chart, size: 16, color: Colors.white),
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '$_selectedItemName 历史走势图',
+                                isQualitativeProject ? '$_selectedItemName 定性演变对比' : '$_selectedItemName 历史走势图',
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                               ),
                             ],
@@ -168,25 +170,27 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.12),
+                              color: isQualitativeProject ? Colors.teal.withOpacity(0.15) : Colors.blue.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              '单位: ${history.first.unit.isNotEmpty ? history.first.unit : "数值"}',
-                              style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w600),
+                              isQualitativeProject ? '定性/等级项目' : '单位: ${history.first.unit.isNotEmpty ? history.first.unit : "数值"}',
+                              style: TextStyle(fontSize: 11, color: isQualitativeProject ? Colors.teal : Colors.blueAccent, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '共包含 ${history.length} 次复查测定数据 (点击数据点或下方列表可定位大报告单)',
+                        isQualitativeProject
+                            ? '已为您按历次复查日期自动比对阴阳性与等级转归 (点击下方列表可定位大报告单)'
+                            : '共包含 ${history.length} 次复查测定数据 (点击数据点或下方列表可定位大报告单)',
                         style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(
                         height: 220,
-                        child: _buildLineChart(history, isDark),
+                        child: _buildLineChart(history, isDark, isQualitativeProject),
                       ),
                     ],
                   ),
@@ -199,11 +203,11 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    '历次检测明细 (点击可直接跳转大报告单)',
+                    '历次检测明细与转归比对 (点击直达大报告单)',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    '共 ${history.length} 条记录',
+                    '共 ${history.length} 次记录',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
@@ -220,10 +224,13 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                   itemBuilder: (context, index) {
                     final item = history[index];
                     final dateStr = DateFormat('yyyy年MM月dd日').format(item.date);
-                    final isAbnormal = item.status != 'normal';
+                    final isAbnormal = item.status != 'normal' || (item.isQualitative && item.value > 0);
 
+                    // 计算数值差值或定性转归
                     String diffStr = '';
-                    if (index > 0) {
+                    if (item.isQualitative) {
+                      diffStr = item.qualitativeChange;
+                    } else if (index > 0) {
                       final prevVal = history[index - 1].value;
                       final diff = item.value - prevVal;
                       if (diff > 0) {
@@ -249,7 +256,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                       leading: CircleAvatar(
                         backgroundColor: isAbnormal ? Colors.red.withOpacity(0.15) : Colors.green.withOpacity(0.15),
                         child: Icon(
-                          isAbnormal ? (item.status == 'high' ? Icons.arrow_upward : Icons.arrow_downward) : Icons.check,
+                          isAbnormal ? (item.status == 'high' ? Icons.arrow_upward : Icons.priority_high) : Icons.check,
                           color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
                           size: 18,
                         ),
@@ -305,7 +312,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '${item.valueStr} ${item.unit}',
+                            item.valueStr.isNotEmpty ? '${item.valueStr} ${item.unit}' : '未注明',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -319,7 +326,9 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                               diffStr,
                               style: TextStyle(
                                 fontSize: 11,
-                                color: diffStr.contains('+') ? Colors.redAccent : Colors.green,
+                                color: diffStr.contains('+') || diffStr.contains('转阳') || diffStr.contains('加重')
+                                    ? Colors.redAccent
+                                    : (diffStr.contains('转阴') || diffStr.contains('好转') ? Colors.green : Colors.grey),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -337,7 +346,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     );
   }
 
-  Widget _buildLineChart(List<MetricHistoryPoint> history, bool isDark) {
+  Widget _buildLineChart(List<MetricHistoryPoint> history, bool isDark, bool isQualitative) {
     if (history.isEmpty) return const SizedBox.shrink();
 
     final spots = <FlSpot>[];
@@ -349,7 +358,10 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     double minY = values.reduce((a, b) => a < b ? a : b);
     double maxY = values.reduce((a, b) => a > b ? a : b);
 
-    if (minY == maxY) {
+    if (isQualitative) {
+      minY = 0;
+      maxY = maxY < 3 ? 3 : maxY + 1;
+    } else if (minY == maxY) {
       minY = minY * 0.8;
       maxY = maxY * 1.2;
     } else {
@@ -367,7 +379,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          horizontalInterval: (maxY - minY) / 4 > 0 ? (maxY - minY) / 4 : 1,
+          horizontalInterval: isQualitative ? 1 : ((maxY - minY) / 4 > 0 ? (maxY - minY) / 4 : 1),
           getDrawingHorizontalLine: (val) => FlLine(
             color: isDark ? const Color(0xFF334155) : Colors.grey.shade200,
             strokeWidth: 1,
@@ -379,11 +391,21 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 42,
-              getTitlesWidget: (val, meta) => Text(
-                val.toStringAsFixed(1),
-                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 10),
-              ),
+              reservedSize: isQualitative ? 46 : 42,
+              getTitlesWidget: (val, meta) {
+                if (isQualitative) {
+                  if (val == 0) return _buildQualitativeLabel('阴性', Colors.green);
+                  if (val == 0.5) return _buildQualitativeLabel('±', Colors.amber);
+                  if (val == 1) return _buildQualitativeLabel('1+/阳', Colors.orange);
+                  if (val == 2) return _buildQualitativeLabel('2+', Colors.redAccent);
+                  if (val >= 3) return _buildQualitativeLabel('3+~4+', Colors.red);
+                  return const Text('');
+                }
+                return Text(
+                  val.toStringAsFixed(1),
+                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 10),
+                );
+              },
             ),
           ),
           bottomTitles: AxisTitles(
@@ -415,14 +437,15 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
         lineBarsData: [
           LineChartBarData(
             spots: spots,
-            isCurved: true,
-            color: const Color(0xFF38BDF8),
+            isCurved: !isQualitative,
+            isStepLineChart: isQualitative,
+            color: isQualitative ? const Color(0xFF14B8A6) : const Color(0xFF38BDF8),
             barWidth: 3,
             isStrokeCapRound: true,
             dotData: FlDotData(
               show: true,
               getDotPainter: (spot, percent, barData, index) {
-                final isAb = history[index].status != 'normal';
+                final isAb = history[index].status != 'normal' || (isQualitative && history[index].value > 0);
                 return FlDotCirclePainter(
                   radius: isAb ? 5.5 : 4,
                   color: isAb ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
@@ -435,8 +458,8 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
               show: true,
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF38BDF8).withOpacity(0.35),
-                  const Color(0xFF38BDF8).withOpacity(0.0),
+                  (isQualitative ? const Color(0xFF14B8A6) : const Color(0xFF38BDF8)).withOpacity(0.35),
+                  (isQualitative ? const Color(0xFF14B8A6) : const Color(0xFF38BDF8)).withOpacity(0.0),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -445,6 +468,13 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildQualitativeLabel(String text, Color color) {
+    return Text(
+      text,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
     );
   }
 }

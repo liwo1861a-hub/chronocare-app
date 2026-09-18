@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.8",
-    "name": "ChronoCare v1.0.8 关键词指标搜索与大项目反向定位走势版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.8\n- 🔍 关键词即时搜索指标：快速输入查找任意指标并即刻呈现历史走势图\n- 📈 正常指标全量入库制图：无论指标是否异常均可生成完整走势折线图与前后变动量分析\n- 🔗 反向定位并跳转大报告单：走势列表清晰标明该指标所属的大项目，点击直接跳转当天病历与对应大栏目\n- 📑 单据级报告单智能聚合与一键栏目合并\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-18T19:00:00Z",
+    "tag_name": "v1.0.9",
+    "name": "ChronoCare v1.0.9 定性/文本型项目时序比对与智能转归演变版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.9\n- 📊 定性/非数值型项目全量支持：尿蛋白定性、乙肝抗体、病理超声描述等 100% 纳入长期时序对比\n- 🔄 智能转归判定：自动对比历次结果，智能标识【转阴 🟢】、【转阳 🔴】、【好转 🔻】、【加重 🔺】\n- 📈 生成时序状态阶梯图与图文对照演变轴\n- 🔍 关键词搜索指标与反向直达所属大报告单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-18T20:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.8-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.8/app-release.apk"
+        "name": "chronocare-v1.0.9-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.9/app-release.apk"
       }
     ]
   }
