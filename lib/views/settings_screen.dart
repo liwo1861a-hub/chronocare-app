@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:open_filex/open_filex.dart';
 import '../providers/settings_provider.dart';
 import '../providers/records_provider.dart';
 import '../services/webdav_service.dart';
@@ -53,6 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prov = Provider.of<SettingsProvider>(context);
     final recordsProv = Provider.of<RecordsProvider>(context, listen: false);
     final s = prov.settings;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(title: const Text('应用设置')),
@@ -84,7 +86,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // 1. WebDAV 云同步配置与自动同步时间设置
+          // 1. 本地数据全量备份与自定义保存文件夹 (用户关注重点)
+          const Text('💾 本地完整备份与自定义保存目录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 自定义保存目录设置
+                  Row(
+                    children: [
+                      const Icon(Icons.folder_special, color: Colors.amber, size: 22),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '本地备份与导出保存目录',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.drive_file_move_outlined, size: 16),
+                        label: const Text('自定义文件夹'),
+                        onPressed: () => _pickCustomDirectory(context, s, prov),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.folder_open, size: 16, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            s.customLocalBackupPath.isNotEmpty
+                                ? s.customLocalBackupPath
+                                : '[系统默认] /Downloads/ChronoCare/ 或 App 专属目录',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: s.customLocalBackupPath.isNotEmpty ? Colors.blueAccent : Colors.grey,
+                              fontWeight: s.customLocalBackupPath.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                        if (s.customLocalBackupPath.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.restore, size: 18, color: Colors.grey),
+                            tooltip: '恢复默认目录',
+                            onPressed: () {
+                              s.customLocalBackupPath = '';
+                              prov.updateSettings(s);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('已恢复为系统默认保存目录')),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.indigo,
+                      child: Icon(Icons.file_download, color: Colors.white, size: 20),
+                    ),
+                    title: const Text('导出完整数据备份 (ZIP 包)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('生成包含全部病历、检验指标、用药、提问及照片原图的 ZIP 包'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _exportBackup(s),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.teal,
+                      child: Icon(Icons.file_upload, color: Colors.white, size: 20),
+                    ),
+                    title: const Text('从备份包恢复数据 (开箱即用)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text('一键还原全部病历、化验单照片、API Keys 与所有设置'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _restoreBackup(prov, recordsProv),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 2. WebDAV 云同步配置与自动同步时间设置
           const Text('☁️ WebDAV 云端全量同步与定时策略', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
@@ -103,50 +206,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   if (s.webdavEnabled) ...[
+                    const Divider(height: 1),
                     TextField(
                       controller: _webdavUrlCtrl,
-                      decoration: const InputDecoration(labelText: 'WebDAV 服务器地址', hintText: 'https://dav.jianguoyun.com/dav/'),
+                      decoration: const InputDecoration(
+                        labelText: 'WebDAV 服务器地址',
+                        hintText: '如 https://dav.jianguoyun.com/dav/',
+                        border: InputBorder.none,
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(height: 1),
                     TextField(
                       controller: _webdavUserCtrl,
-                      decoration: const InputDecoration(labelText: '账号 / 邮箱'),
+                      decoration: const InputDecoration(
+                        labelText: '账号 / 邮箱',
+                        border: InputBorder.none,
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(height: 1),
                     TextField(
                       controller: _webdavPassCtrl,
-                      decoration: const InputDecoration(labelText: '应用密码 / Token'),
                       obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: '应用专属密码 / 授权 Token',
+                        border: InputBorder.none,
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(height: 1),
                     TextField(
                       controller: _webdavDirCtrl,
-                      decoration: const InputDecoration(labelText: '远端存储目录', hintText: '/ChronoCare/'),
+                      decoration: const InputDecoration(
+                        labelText: '云端同步目录',
+                        hintText: '/ChronoCare/',
+                        border: InputBorder.none,
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: s.autoSyncInterval,
-                      decoration: const InputDecoration(labelText: '自动同步策略'),
-                      items: const [
-                        DropdownMenuItem(value: 'daily', child: Text('每日指定时间自动静默同步')),
-                        DropdownMenuItem(value: 'on_startup', child: Text('每次启动 App 时自动拉取')),
-                        DropdownMenuItem(value: 'manual', child: Text('仅手动同步')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          s.autoSyncInterval = val;
-                          prov.updateSettings(s);
-                        }
-                      },
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.sync, color: Colors.blueAccent),
+                      title: const Text('同步触发策略'),
+                      trailing: DropdownButton<String>(
+                        value: s.autoSyncInterval,
+                        underline: const SizedBox.shrink(),
+                        items: const [
+                          DropdownMenuItem(value: 'manual', child: Text('仅手动同步')),
+                          DropdownMenuItem(value: 'on_startup', child: Text('每次打开 App 时')),
+                          DropdownMenuItem(value: 'on_change', child: Text('每次数据变更时')),
+                          DropdownMenuItem(value: 'daily', child: Text('每日定时自动同步')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            s.autoSyncInterval = val;
+                            prov.updateSettings(s);
+                          }
+                        },
+                      ),
                     ),
-                    // 允许用户精确自定义同步时间点
                     if (s.autoSyncInterval == 'daily') ...[
-                      const SizedBox(height: 10),
+                      const Divider(height: 1),
                       ListTile(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(color: Colors.blue.withOpacity(0.3)),
-                        ),
                         leading: const Icon(Icons.access_time, color: Colors.blueAccent),
                         title: const Text('每日自动同步时间', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                         subtitle: Text('将在每天 ${s.autoSyncTime} 自动静默同步全部数据与图片'),
@@ -195,33 +313,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 2. 本地数据全量备份与恢复
-          const Text('💾 本地 100% 完整备份与恢复', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.file_download, color: Colors.indigo),
-                  title: const Text('导出完整数据备份 (ZIP 包)'),
-                  subtitle: const Text('包含全部病历、检验指标、照片原图、自定义设置与分类'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _exportBackup,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.file_upload, color: Colors.teal),
-                  title: const Text('从备份包恢复数据 (开箱即用)'),
-                  subtitle: const Text('一键还原所有病历、化验单照片、API Keys 与所有设置'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _restoreBackup(prov, recordsProv),
-                ),
-              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -300,6 +391,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _pickCustomDirectory(BuildContext context, s, SettingsProvider prov) async {
+    try {
+      final selectedDirectory = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '请选择本地备份与导出保存文件夹',
+      );
+      if (selectedDirectory != null && selectedDirectory.isNotEmpty) {
+        s.customLocalBackupPath = selectedDirectory;
+        await prov.updateSettings(s);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('✅ 已成功将保存目录设置为:\n$selectedDirectory')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择文件夹失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _pickSyncTime(BuildContext context, s, SettingsProvider prov) async {
     final parts = s.autoSyncTime.split(':');
     final initialHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 22 : 22;
@@ -347,7 +461,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('同步失败: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      setState(() => _isSyncing = false);
+      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
@@ -355,18 +469,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _saveWebdavFields(s);
     setState(() => _isDownloadingWebdav = true);
     try {
-      await WebDavService.instance.downloadDataFromWebDav(s);
+      await WebDavService.instance.restoreDataFromWebDav(s);
       await prov.loadSettings();
       await recordsProv.loadData();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从 WebDAV 完整恢复所有病历、图片与设置，开箱即用！')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 已从 WebDAV 成功恢复全量数据、化验单照片与设置！')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('还原失败: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('云端恢复失败: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      setState(() => _isDownloadingWebdav = false);
+      if (mounted) setState(() => _isDownloadingWebdav = false);
     }
   }
 
@@ -375,100 +489,139 @@ class _SettingsScreenState extends State<SettingsScreen> {
     s.webdavUsername = _webdavUserCtrl.text.trim();
     s.webdavPassword = _webdavPassCtrl.text.trim();
     s.webdavRemoteDir = _webdavDirCtrl.text.trim();
-    Provider.of<SettingsProvider>(context, listen: false).updateSettings(s);
   }
 
-  Future<void> _exportBackup() async {
+  Future<void> _exportBackup(s) async {
     try {
-      final zipFile = await BackupService.instance.createFullBackupZip();
+      final file = await BackupService.instance.createFullBackupZip(
+        customTargetDirPath: s.customLocalBackupPath,
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('完整备份已导出！保存在: ${zipFile.path}')),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('🎉 本地全量备份成功'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('已将全部病历、检验指标、用药、提问与照片完整打包：'),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SelectableText(
+                    file.path,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('完成'),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('打开文件所在位置'),
+                onPressed: () async {
+                  await OpenFilex.open(file.parent.path);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出备份失败: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
 
   Future<void> _restoreBackup(SettingsProvider prov, RecordsProvider recordsProv) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['zip', 'ccbackup'],
-    );
-    if (result != null && result.files.single.path != null) {
-      try {
-        final file = File(result.files.single.path!);
-        await BackupService.instance.restoreFromBackupZip(file);
+    try {
+      final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['zip']);
+      if (res != null && res.files.single.path != null) {
+        final zipFile = File(res.files.single.path!);
+        await BackupService.instance.restoreFromBackupZip(zipFile);
         await prov.loadSettings();
         await recordsProv.loadData();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 数据、照片原图、设置与分类已 100% 完整恢复！')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✅ 备份还原成功！所有病历、照片与设置已全部恢复')),
+          );
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('恢复失败: $e'), backgroundColor: Colors.red));
-        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('还原失败: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
 
   Future<void> _checkAppUpdate() async {
     setState(() => _isCheckingUpdate = true);
-    final release = await UpdateService.instance.checkUpdate();
-    setState(() => _isCheckingUpdate = false);
+    try {
+      final info = await UpdateService.instance.checkUpdate();
+      setState(() => _isCheckingUpdate = false);
 
-    if (release == null) {
+      if (!mounted) return;
+
+      if (info == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前已是最新版本 🎉')),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('发现新版本: ${info.tagName}'),
+          content: SingleChildScrollView(
+            child: Text(info.body.isNotEmpty ? info.body : '包含最新功能优化与体验升级。'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('稍后再说'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                if (info.downloadUrl.isNotEmpty) {
+                  setState(() => _isDownloadingApk = true);
+                  await UpdateService.instance.downloadAndInstallApk(
+                    downloadUrl: info.downloadUrl,
+                    onProgress: (p) {
+                      if (mounted) setState(() => _downloadProgress = p);
+                    },
+                  );
+                  if (mounted) setState(() => _isDownloadingApk = false);
+                }
+              },
+              child: const Text('立即更新 (覆盖安装)'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() => _isCheckingUpdate = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('当前已是最新版本 (v${UpdateService.currentVersion})')),
-        );
-      }
-    } else {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('发现新版本 ${release.tagName}'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(release.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text(release.body),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后再说')),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _startDownloadUpdate(release.downloadUrl);
-                },
-                child: const Text('立即更新 (就地覆盖)'),
-              ),
-            ],
-          ),
+          SnackBar(content: Text('检查更新失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
-  }
-
-  void _startDownloadUpdate(String url) async {
-    if (url.isEmpty) return;
-    setState(() {
-      _isDownloadingApk = true;
-      _downloadProgress = 0.0;
-    });
-
-    await UpdateService.instance.downloadAndInstallApk(
-      downloadUrl: url,
-      onProgress: (p) => setState(() => _downloadProgress = p),
-    );
-
-    setState(() => _isDownloadingApk = false);
   }
 }

@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.1.0",
-    "name": "ChronoCare v1.1.0 药物记录与复查提问备忘对比大类版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.1.0\n- 💊 新增大类【慢病药物记录】：支持指向调药/复查日期，智能与上次方案对比剂量增减\n- 📝 新增大类【复查提问备忘】：独立问题管理、勾选确定是否已提问、记录医生回复、并与上次复查提问历史对比\n- 📊 定性/文本型项目时序对比与智能转归判定\n- 🔍 关键词搜索指标与反向直达所属大报告单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-18T21:00:00Z",
+    "tag_name": "v1.1.1",
+    "name": "ChronoCare v1.1.1 本地保存自定义文件夹与全功能增强版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.1.1\n- 📁 本地保存自定义文件夹：自由指定备份与导出文件保存路径，提供一键打开目录\n- 💊 慢病药物记录：支持调药日期关联与智能前后对比\n- 📝 复查提问备忘：独立问题管理、勾选确认是否已提问、记录医生答复与历史对比\n- 📊 定性项目时序比对与智能转归判定\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-18T22:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.1.0-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.0/app-release.apk"
+        "name": "chronocare-v1.1.1-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.1/app-release.apk"
       }
     ]
   }

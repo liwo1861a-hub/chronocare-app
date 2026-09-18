@@ -34,6 +34,10 @@ class AppSettings {
   bool batchAutoAiParse; // 开关2：OCR 完成后自动调用 AI 整理分类入库
   int batchConcurrency; // 批量并发数 (1~5)
 
+  // --- 本地保存与自定义文件夹配置 ---
+  String customLocalBackupPath; // 用户自定义本地备份/导出目录 (如 /storage/emulated/0/Documents/ChronoCare/)
+  String customLocalImagesPath; // 用户自定义化验单原图存储目录
+
   // --- WebDAV 同步配置 ---
   bool webdavEnabled;
   String webdavUrl;
@@ -53,7 +57,7 @@ class AppSettings {
   double fontScale; // 字体缩放比例 0.9 ~ 1.3
   
   // --- 栏目与排序自定义 ---
-  List<String> enabledTabs; // ['timeline', 'diseases', 'categories', 'trend']
+  List<String> enabledTabs; // ['timeline', 'trend', 'medications', 'questions', 'diseases']
   String defaultStartupTab; // 默认启动栏目
   String defaultRecordSort; // 'date_desc', 'date_asc', 'abnormal_first'
 
@@ -87,6 +91,8 @@ class AppSettings {
     this.batchAutoOcr = true,
     this.batchAutoAiParse = true,
     this.batchConcurrency = 2,
+    this.customLocalBackupPath = '',
+    this.customLocalImagesPath = '',
     this.webdavEnabled = false,
     this.webdavUrl = 'https://dav.jianguoyun.com/dav/',
     this.webdavUsername = '',
@@ -108,7 +114,7 @@ class AppSettings {
     this.enableDebugLogs = false,
     this.autoCheckUpdates = true,
     this.updateChannel = 'stable',
-  }) : enabledTabs = enabledTabs ?? ['timeline', 'diseases', 'categories', 'trend'];
+  }) : enabledTabs = enabledTabs ?? ['timeline', 'trend', 'medications', 'questions', 'diseases'];
 
   Map<String, dynamic> toMap() {
     return {
@@ -135,6 +141,8 @@ class AppSettings {
       'batchAutoOcr': batchAutoOcr,
       'batchAutoAiParse': batchAutoAiParse,
       'batchConcurrency': batchConcurrency,
+      'customLocalBackupPath': customLocalBackupPath,
+      'customLocalImagesPath': customLocalImagesPath,
       'webdavEnabled': webdavEnabled,
       'webdavUrl': webdavUrl,
       'webdavUsername': webdavUsername,
@@ -160,11 +168,13 @@ class AppSettings {
   }
 
   factory AppSettings.fromMap(Map<String, dynamic> map) {
-    List<String> tabs = ['timeline', 'diseases', 'categories', 'trend'];
+    List<String> tabs = ['timeline', 'trend', 'medications', 'questions', 'diseases'];
     if (map['enabledTabs'] != null) {
       try {
-        final decoded = jsonDecode(map['enabledTabs']);
-        if (decoded is List) tabs = decoded.map((e) => e.toString()).toList();
+        final decoded = jsonDecode(map['enabledTabs'].toString());
+        if (decoded is List) {
+          tabs = decoded.map((e) => e.toString()).toList();
+        }
       } catch (_) {}
     }
 
@@ -182,7 +192,7 @@ class AppSettings {
       customApiKey: map['customApiKey'] ?? '',
       customBaseUrl: map['customBaseUrl'] ?? 'https://api.openai.com/v1',
       customModel: map['customModel'] ?? 'gpt-4o-mini',
-      aiTemperature: (map['aiTemperature'] as num?)?.toDouble() ?? 0.2,
+      aiTemperature: (map['aiTemperature'] is num) ? (map['aiTemperature'] as num).toDouble() : 0.2,
       aiMaxTokens: map['aiMaxTokens'] ?? 4096,
       customSystemPrompt: map['customSystemPrompt'] ?? '',
       ocrEngine: map['ocrEngine'] ?? 'gemini_vision',
@@ -192,6 +202,8 @@ class AppSettings {
       batchAutoOcr: map['batchAutoOcr'] ?? true,
       batchAutoAiParse: map['batchAutoAiParse'] ?? true,
       batchConcurrency: map['batchConcurrency'] ?? 2,
+      customLocalBackupPath: map['customLocalBackupPath'] ?? '',
+      customLocalImagesPath: map['customLocalImagesPath'] ?? '',
       webdavEnabled: map['webdavEnabled'] ?? false,
       webdavUrl: map['webdavUrl'] ?? 'https://dav.jianguoyun.com/dav/',
       webdavUsername: map['webdavUsername'] ?? '',
@@ -205,7 +217,7 @@ class AppSettings {
       themeMode: map['themeMode'] ?? 'system',
       primaryColorHex: map['primaryColorHex'] ?? '#2563EB',
       compactCardMode: map['compactCardMode'] ?? false,
-      fontScale: (map['fontScale'] as num?)?.toDouble() ?? 1.0,
+      fontScale: (map['fontScale'] is num) ? (map['fontScale'] as num).toDouble() : 1.0,
       enabledTabs: tabs,
       defaultStartupTab: map['defaultStartupTab'] ?? 'timeline',
       defaultRecordSort: map['defaultRecordSort'] ?? 'date_desc',
