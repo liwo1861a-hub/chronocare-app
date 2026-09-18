@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.1",
-    "name": "ChronoCare v1.0.1 智能合并与深度优化版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.1\n- ✨ 同日期检查单自动合并至同一复查档案\n- 🤖 支持档案独立编辑医嘱与 AI 智能总结医嘱\n- 🎨 全面优化深色模式色彩对比度，告别发暗发灰\n- 🔬 检查分类根据 OCR 真实名称命名，支持新建自定义分类与自由移动整合",
-    "published_at": "2025-05-18T12:00:00Z",
+    "tag_name": "v1.0.2",
+    "name": "ChronoCare v1.0.2 永久固化签名与开单日期精准合并版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.2\n- 🔒 永久固化 Release 签名证书：支持 App 内一键无缝覆盖更新安装，无需卸载\n- 📅 严格根据医生开检查单的日期进行时间轴档案自动合并\n- 🤖 支持档案独立编辑医嘱与 AI 智能总结医嘱\n- 🎨 深度优化深色模式色彩对比度，告别发暗发灰\n- 🔬 检查分类根据 OCR 真实名称命名，支持新建自定义分类与自由移动整合",
+    "published_at": "2025-05-18T13:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.1-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.1/app-release.apk"
+        "name": "chronocare-v1.0.2-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.2/app-release.apk"
       }
     ]
   }

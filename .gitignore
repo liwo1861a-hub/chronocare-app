@@ -36,7 +36,5 @@ migrate_working_dir/
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 
-# Keystore files
-*.jks
-*.keystore
-!release.jks
+# Keep the fixed release keystore
+!chronocare-release.jks

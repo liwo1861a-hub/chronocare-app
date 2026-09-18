@@ -25,8 +25,8 @@ class UpdateService {
   static final UpdateService instance = UpdateService._();
   UpdateService._();
 
-  static const String currentVersion = '1.0.1';
-  static const int currentBuildNumber = 2;
+  static const String currentVersion = '1.0.2';
+  static const int currentBuildNumber = 3;
 
   static const String repoOwner = 'liwo1861a-hub';
   static const String repoName = 'chronocare-app';
@@ -116,7 +116,7 @@ class UpdateService {
     await sink.flush();
     await sink.close();
 
-    // 打开 APK 安装器
+    // 打开 APK 安装器 (就地覆盖更新)
     await OpenFilex.open(apkFile.path);
   }
 }

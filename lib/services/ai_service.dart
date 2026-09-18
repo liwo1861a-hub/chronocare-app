@@ -10,7 +10,7 @@ class AiAnalysisResult {
   String hospital;
   String department;
   String doctorName;
-  DateTime? checkDate;
+  DateTime? checkDate; // 开单/检查日期
   String category;
   String doctorAdvice;
   List<CheckItem> items;
@@ -37,12 +37,18 @@ class AiService {
 
   static const String _systemPrompt = '''
 你是一位资深医疗化验单与病历解析专家。请严格分析输入的化验单图片或文本，提取以下结构化医疗信息，并以纯 JSON 格式输出（不要添加任何 markdown 代码块外部的多余文本）：
+
+【核心日期判定规则（必须严格遵守）】：
+1. 化验单/报告单上通常有多个日期。请【优先提取医生开单日期 / 申请日期 / 采样日期 / 检查日期】作为 "checkDate"（格式 YYYY-MM-DD）。
+2. 坚决不要使用后续的“报告审核日期”或“报告打印日期”（因为打印或出具可能延迟数天，但病程档案必须以开单就诊/采血检查当天为准）。
+3. 如果单据上同时有开单日期和打印日期，必须取开单日期。
+
 JSON 字段规范：
 {
   "hospital": "医院名称（若未提及留空字符串）",
   "department": "就诊科室（如内分泌科、消化内科）",
-  "doctorName": "就诊医生姓名（若无留空）",
-  "checkDate": "检查日期，格式必须为 YYYY-MM-DD（若无则填写今天日期）",
+  "doctorName": "开单/就诊医生姓名（若无留空）",
+  "checkDate": "开检查单日期/采样检查日期，格式必须为 YYYY-MM-DD（严禁取报告打印日期）",
   "category": "检查大类（如：血液生化、血常规、尿常规、肝肾功能、超声影像、CT/MRI、胃肠镜、心电图、病理报告、随访记录）",
   "doctorAdvice": "医生就诊医嘱或检查结论/诊断处置建议",
   "items": [
@@ -94,7 +100,7 @@ JSON 字段规范：
           "parts": [
             {
               "text": _systemPrompt +
-                  "\n请全面扫描识别并提取此化验单/检查报告中的所有项目、指标、参考范围、异常状态、日期、医院与医嘱："
+                  "\n请全面扫描识别并提取此化验单中的所有项目、指标、参考范围、异常状态、开单检查日期（优先提取开单/申请/采样日期）、医院与医嘱："
             },
             {
               "inline_data": {
@@ -239,7 +245,6 @@ ${userNotes.isNotEmpty ? userNotes : "无特殊备注"}
       final data = jsonDecode(response.body);
       return data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
     } else {
-      // 通用 OpenAI 兼容
       final apiKey = settings.aiProvider == 'deepseek'
           ? settings.deepSeekApiKey
           : (settings.aiProvider == 'openai'
