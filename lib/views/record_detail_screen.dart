@@ -22,7 +22,7 @@ class RecordDetailScreen extends StatefulWidget {
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
   bool _isSummarizingAdvice = false;
   int _selectedCategoryIndex = 0;
-  bool _showOnlyCurrentCategoryImages = true; // true: 仅看当前栏目对应图片; false: 查看本次所有化验单图片
+  bool _showOnlyCurrentCategoryImages = true;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +70,6 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
         currentCategoryImages.add(it.sourceImagePath);
       }
     }
-    // 若单项未独立打标但记录只有 1 张图，或当前栏目未匹配到图片，则智能关联
     if (currentCategoryImages.isEmpty && record.imagePaths.isNotEmpty) {
       if (categoryNames.length == 1) {
         currentCategoryImages.addAll(record.imagePaths);
@@ -288,7 +287,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
               ),
               const SizedBox(height: 14),
 
-              // 当前选中栏目的详细内容面板 (含栏目名修改、图片显示切换与指标明细)
+              // 当前选中栏目的详细内容面板
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(
@@ -355,7 +354,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const Divider(height: 20),
 
-                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”，支持横向无缝滑动
+                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -440,10 +439,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: currentItems.length,
-                        separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
-                        itemBuilder: (ctx, itemIdx) {
+                        separatorBuilder: (c, i) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
+                        itemBuilder: (c, itemIdx) {
                           final item = currentItems[itemIdx];
                           final isAbnormal = item.status != 'normal';
+                          final refText = item.referenceRange.isNotEmpty ? item.referenceRange : '未注明';
+                          final noteText = item.notes.isNotEmpty ? ' · ${item.notes}' : '';
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -460,7 +461,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                       ),
                                       Text(
-                                        '参考值: ${item.referenceRange.isNotEmpty ? item.referenceRange : "未注明"} ${item.notes.isNotEmpty ? "· " + item.notes : ""}',
+                                        '参考值: $refText$noteText',
                                         style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                                       ),
                                     ],
@@ -495,9 +496,10 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                                   ),
                                 ),
                               ],
-                            );
-                          },
-                        ),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
