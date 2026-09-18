@@ -1,0 +1,77 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Signed APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Generate Fixed Release Keystore
+        run: |
+          keytool -genkey -v -keystore android/app/release.jks \
+            -storepass "chronocare_secret_pass_1861" \
+            -alias "chronocare" \
+            -keypass "chronocare_secret_pass_1861" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=ChronoCare, OU=Health, O=Liwo, L=Beijing, ST=Beijing, C=CN"
+
+      - name: Build Android Release APK
+        run: |
+          flutter build apk --release \
+            -Pproject.RELEASE_STORE_FILE=release.jks \
+            -Pproject.RELEASE_STORE_PASSWORD=chronocare_secret_pass_1861 \
+            -Pproject.RELEASE_KEY_ALIAS=chronocare \
+            -Pproject.RELEASE_KEY_PASSWORD=chronocare_secret_pass_1861
+
+      - name: Rename APK Output
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk chronocare-v1.0.0-release.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronocare-v1.0.0-release
+          path: chronocare-v1.0.0-release.apk
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: ChronoCare v1.0.0 稳定发布版
+          body_path: assets/version.json
+          files: |
+            chronocare-v1.0.0-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

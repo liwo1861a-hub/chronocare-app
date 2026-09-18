@@ -1,0 +1,325 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
+import '../providers/records_provider.dart';
+import '../providers/settings_provider.dart';
+import '../models/record.dart';
+import '../models/check_item.dart';
+import '../models/medication.dart';
+import '../services/ocr_service.dart';
+import '../services/ai_service.dart';
+import 'record_edit_screen.dart';
+
+enum BatchTaskStatus { pending, ocring, aiParsing, completed, failed }
+
+class BatchTaskItem {
+  final String id;
+  final File file;
+  BatchTaskStatus status;
+  String ocrText;
+  AiAnalysisResult? result;
+  String error;
+
+  BatchTaskItem({
+    required this.id,
+    required this.file,
+    this.status = BatchTaskStatus.pending,
+    this.ocrText = '',
+    this.result,
+    this.error = '',
+  });
+}
+
+class BatchImportScreen extends StatefulWidget {
+  const BatchImportScreen({super.key});
+
+  @override
+  State<BatchImportScreen> createState() => _BatchImportScreenState();
+}
+
+class _BatchImportScreenState extends State<BatchImportScreen> {
+  final List<BatchTaskItem> _tasks = [];
+  bool _isProcessing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final settingsProv = Provider.of<SettingsProvider>(context);
+    final settings = settingsProv.settings;
+    final recordsProv = Provider.of<RecordsProvider>(context, listen: false);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('批量导入与智能扫单'),
+        actions: [
+          if (_tasks.isNotEmpty && !_isProcessing)
+            TextButton.icon(
+              icon: const Icon(Icons.done_all, color: Colors.white),
+              label: const Text('全部入库', style: TextStyle(color: Colors.white)),
+              onPressed: () => _saveAllCompletedTasks(recordsProv),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 两个独立的核心控制开关面板
+          Card(
+            margin: const EdgeInsets.all(12),
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.document_scanner, size: 20, color: Colors.blueAccent),
+                        SizedBox(width: 8),
+                        Text('开关 1：上传后自动 OCR 识别', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    subtitle: const Text('选图后自动提取图片中的所有文字行', style: TextStyle(fontSize: 12)),
+                    value: settings.batchAutoOcr,
+                    onChanged: (val) {
+                      settingsProv.updatePartial(batchAutoOcr: val);
+                    },
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 20, color: Colors.purpleAccent),
+                        SizedBox(width: 8),
+                        Text('开关 2：OCR 后自动 AI 整理分类', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    subtitle: const Text('自动调用 Gemini-3.7-flash 提取项目/数值/异常/医嘱并归类', style: TextStyle(fontSize: 12)),
+                    value: settings.batchAutoAiParse,
+                    onChanged: (val) {
+                      settingsProv.updatePartial(batchAutoAiParse: val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 操作按钮区域
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text('选择化验单图片 (多选)'),
+                    onPressed: _isProcessing ? null : _pickImages,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (_tasks.isNotEmpty && !_isProcessing)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.play_arrow, color: Colors.white),
+                    label: const Text('开始处理', style: TextStyle(color: Colors.white)),
+                    onPressed: () => _runBatchPipeline(settings),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // 任务列表
+          Expanded(
+            child: _tasks.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_outlined, size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 12),
+                        const Text('点击上方按钮批量选择化验单或报告单照片', style: TextStyle(color: Colors.grey)),
+                        const SizedBox(height: 6),
+                        const Text('支持一键自动 OCR 与 Gemini 3.7 Flash 智能结构化整理', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = _tasks[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(task.file, width: 50, height: 50, fit: BoxFit.cover),
+                          ),
+                          title: Text('图片 #${index + 1} (${task.file.path.split("/").last.split("\\").last})'),
+                          subtitle: _buildTaskSubtitle(task),
+                          trailing: _buildTaskTrailing(task, index, settings, recordsProv),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskSubtitle(BatchTaskItem task) {
+    switch (task.status) {
+      case BatchTaskStatus.pending:
+        return const Text('等待处理', style: TextStyle(color: Colors.grey, fontSize: 12));
+      case BatchTaskStatus.ocring:
+        return const Text('正在进行 OCR 识别...', style: TextStyle(color: Colors.blue, fontSize: 12));
+      case BatchTaskStatus.aiParsing:
+        return const Text('正在通过 Gemini 3.7 Flash 结构化整理...', style: TextStyle(color: Colors.purple, fontSize: 12));
+      case BatchTaskStatus.completed:
+        final count = task.result?.items.length ?? 0;
+        return Text('已解析 $count 个指标 · ${task.result?.hospital ?? ""}', style: const TextStyle(color: Colors.green, fontSize: 12));
+      case BatchTaskStatus.failed:
+        return Text('失败: ${task.error}', style: const TextStyle(color: Colors.red, fontSize: 12));
+    }
+  }
+
+  Widget _buildTaskTrailing(BatchTaskItem task, int index, settings, RecordsProvider recordsProv) {
+    if (task.status == BatchTaskStatus.ocring || task.status == BatchTaskStatus.aiParsing) {
+      return const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (task.status == BatchTaskStatus.completed) {
+      return IconButton(
+        icon: const Icon(Icons.arrow_forward, color: Colors.blueAccent),
+        onPressed: () => _openTaskEdit(task, recordsProv),
+      );
+    }
+    return IconButton(
+      icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+      onPressed: () {
+        setState(() => _tasks.removeAt(index));
+      },
+    );
+  }
+
+  Future<void> _pickImages() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickMultiImage();
+    if (picked.isNotEmpty) {
+      setState(() {
+        for (var p in picked) {
+          _tasks.add(BatchTaskItem(
+            id: const Uuid().v4(),
+            file: File(p.path),
+          ));
+        }
+      });
+      // 检查是否需要自动触发处理
+      final settings = Provider.of<SettingsProvider>(context, listen: false).settings;
+      if (settings.batchAutoOcr) {
+        _runBatchPipeline(settings);
+      }
+    }
+  }
+
+  Future<void> _runBatchPipeline(settings) async {
+    setState(() => _isProcessing = true);
+
+    for (var task in _tasks) {
+      if (task.status == BatchTaskStatus.completed) continue;
+
+      try {
+        if (settings.batchAutoOcr && settings.batchAutoAiParse) {
+          // 全自动双开模式：Gemini 视觉直接识别结构化输出
+          setState(() => task.status = BatchTaskStatus.aiParsing);
+          final res = await AiService.instance.analyzeImageWithGemini(
+            imageFile: task.file,
+            settings: settings,
+          );
+          task.result = res;
+          task.status = BatchTaskStatus.completed;
+        } else if (settings.batchAutoOcr) {
+          // 仅开启 OCR 开关
+          setState(() => task.status = BatchTaskStatus.ocring);
+          final text = await OcrService.instance.recognizeText(
+            imageFile: task.file,
+            settings: settings,
+          );
+          task.ocrText = text;
+          task.status = BatchTaskStatus.completed;
+        }
+      } catch (e) {
+        task.status = BatchTaskStatus.failed;
+        task.error = e.toString();
+      }
+      setState(() {});
+    }
+
+    setState(() => _isProcessing = false);
+  }
+
+  void _openTaskEdit(BatchTaskItem task, RecordsProvider recordsProv) {
+    final res = task.result;
+    final rec = CheckRecord(
+      id: const Uuid().v4(),
+      diseaseId: recordsProv.diseases.isNotEmpty ? recordsProv.diseases.first.id : '',
+      checkDate: res?.checkDate ?? DateTime.now(),
+      hospital: res?.hospital ?? '',
+      department: res?.department ?? '',
+      doctorName: res?.doctorName ?? '',
+      category: res?.category ?? '血液生化',
+      doctorAdvice: res?.doctorAdvice ?? '',
+      imagePaths: [task.file.path],
+      items: res?.items ?? [],
+      medicationChanges: res?.medicationChanges ?? [],
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RecordEditScreen(record: rec)),
+    );
+  }
+
+  void _saveAllCompletedTasks(RecordsProvider recordsProv) async {
+    int savedCount = 0;
+    for (var task in _tasks) {
+      if (task.status == BatchTaskStatus.completed && task.result != null) {
+        final res = task.result!;
+        final rec = CheckRecord(
+          id: const Uuid().v4(),
+          diseaseId: recordsProv.diseases.isNotEmpty ? recordsProv.diseases.first.id : '',
+          checkDate: res.checkDate ?? DateTime.now(),
+          hospital: res.hospital,
+          department: res.department,
+          doctorName: res.doctorName,
+          category: res.category,
+          doctorAdvice: res.doctorAdvice,
+          imagePaths: [task.file.path],
+          items: res.items,
+          medicationChanges: res.medicationChanges,
+        );
+        await recordsProv.saveRecord(rec);
+        savedCount++;
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已成功自动入库 $savedCount 份复查记录！')),
+      );
+      Navigator.pop(context);
+    }
+  }
+}
