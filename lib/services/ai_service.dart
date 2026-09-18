@@ -76,7 +76,7 @@ JSON 字段规范：
   }) async {
     final apiKey = settings.geminiApiKey.trim();
     if (apiKey.isEmpty) {
-      throw Exception('请先在【设置 -> AI 大模型配置】中填入 Google Gemini API Key');
+      throw Exception('请先在【设置 -> 高级功能 -> AI 配置】中填入 Google Gemini API Key');
     }
 
     final bytes = await imageFile.readAsBytes();
@@ -128,7 +128,7 @@ JSON 字段规范：
     return _parseJsonToResult(contentText);
   }
 
-  /// 利用 AI 分析已提取的 OCR 文本（支持 Gemini, OpenAI, DeepSeek, Claude 等）
+  /// 利用 AI 分析已提取的 OCR 文本
   Future<AiAnalysisResult> analyzeTextWithAi({
     required String ocrText,
     required AppSettings settings,
@@ -156,7 +156,6 @@ JSON 字段规范：
         maxTokens: settings.aiMaxTokens,
       );
     } else {
-      // custom openai compatible
       return _analyzeTextOpenAiCompatible(
         text: ocrText,
         baseUrl: settings.customBaseUrl,
@@ -168,11 +167,133 @@ JSON 字段规范：
     }
   }
 
+  /// AI 智能总结与提炼医嘱建议
+  Future<String> summarizeAdviceWithAi({
+    required List<CheckItem> items,
+    required List<MedicationChange> meds,
+    required String diseaseName,
+    required String hospital,
+    required String userNotes,
+    required AppSettings settings,
+  }) async {
+    final abnormalItems = items.where((i) => i.status != 'normal').toList();
+    final itemsSummary = items
+        .map((i) =>
+            '- ${i.itemName}: ${i.value} ${i.unit} (参考值: ${i.referenceRange}) ${i.status != "normal" ? "[异常: " + i.status + "]" : ""}')
+        .join('\n');
+    final medsSummary = meds
+        .map((m) => '- ${m.medicineName}: ${m.dosage}, ${m.frequency} (调整原因: ${m.reason})')
+        .join('\n');
+
+    final prompt = '''
+你是一位专业的慢病管理专家与临床主治医生。请根据以下患者当次复查的完整检验数据与用药情况，生成一份清晰、条理分明、通俗易懂的【医生医嘱与综合健康管理建议】：
+
+【慢病背景】: $diseaseName
+【就诊医院】: ${hospital.isNotEmpty ? hospital : "三甲医院"}
+【异常检验项数量】: ${abnormalItems.length} 项
+【全部检验指标】:
+$itemsSummary
+
+【当前用药调整】:
+${medsSummary.isNotEmpty ? medsSummary : "无用药变更记录"}
+
+【患者本次就诊备注】:
+${userNotes.isNotEmpty ? userNotes : "无特殊备注"}
+
+请直接输出整理后的医嘱内容（包含：1. 指标总体评估与异常分析；2. 用药与处置建议；3. 日常生活与饮食运动注意事项；4. 下次复查建议周期）。语言专业亲切，条理清晰，500字以内。
+''';
+
+    if (settings.aiProvider == 'gemini') {
+      final apiKey = settings.geminiApiKey.trim();
+      if (apiKey.isEmpty) {
+        throw Exception('请先在高级设置中配置 Gemini API Key');
+      }
+      final modelName = settings.geminiModel.isNotEmpty
+          ? settings.geminiModel
+          : 'gemini-3.7-flash';
+      final url = Uri.parse(
+          '${settings.geminiBaseUrl}/v1beta/models/$modelName:generateContent?key=$apiKey');
+      final payload = {
+        "contents": [
+          {
+            "parts": [
+              {"text": prompt}
+            ]
+          }
+        ],
+        "generationConfig": {
+          "temperature": 0.3,
+          "maxOutputTokens": 2048,
+        }
+      };
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('AI 总结医嘱失败: ${response.body}');
+      }
+      final data = jsonDecode(response.body);
+      return data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
+    } else {
+      // 通用 OpenAI 兼容
+      final apiKey = settings.aiProvider == 'deepseek'
+          ? settings.deepSeekApiKey
+          : (settings.aiProvider == 'openai'
+              ? settings.openAiApiKey
+              : settings.customApiKey);
+      final baseUrl = settings.aiProvider == 'deepseek'
+          ? settings.deepSeekBaseUrl
+          : (settings.aiProvider == 'openai'
+              ? settings.openAiBaseUrl
+              : settings.customBaseUrl);
+      final model = settings.aiProvider == 'deepseek'
+          ? settings.deepSeekModel
+          : (settings.aiProvider == 'openai'
+              ? settings.openAiModel
+              : settings.customModel);
+
+      String cleanBaseUrl = baseUrl.trim();
+      if (cleanBaseUrl.endsWith('/')) {
+        cleanBaseUrl = cleanBaseUrl.substring(0, cleanBaseUrl.length - 1);
+      }
+      final url = Uri.parse('$cleanBaseUrl/chat/completions');
+
+      final payload = {
+        "model": model,
+        "messages": [
+          {"role": "system", "content": "你是一位专业的慢病管理专家。"},
+          {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2048,
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('AI 总结医嘱失败: ${response.body}');
+      }
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      return data['choices']?[0]?['message']?['content'] ?? '';
+    }
+  }
+
   Future<AiAnalysisResult> _analyzeTextGemini(
       String text, AppSettings settings) async {
     final apiKey = settings.geminiApiKey.trim();
     if (apiKey.isEmpty) {
-      throw Exception('请先在【设置 -> AI 大模型配置】中填入 Google Gemini API Key');
+      throw Exception('请先在高级设置中填入 Google Gemini API Key');
     }
 
     final modelName = settings.geminiModel.isNotEmpty
@@ -222,7 +343,7 @@ JSON 字段规范：
     required int maxTokens,
   }) async {
     if (apiKey.trim().isEmpty) {
-      throw Exception('API Key 未配置，请在设置中填写');
+      throw Exception('API Key 未配置，请在高级设置中填写');
     }
 
     String cleanBaseUrl = baseUrl.trim();
@@ -261,7 +382,6 @@ JSON 字段规范：
 
   AiAnalysisResult _parseJsonToResult(String rawJson) {
     String cleanJson = rawJson.trim();
-    // 清理 markdown 代码块包裹
     if (cleanJson.startsWith('```json')) {
       cleanJson = cleanJson.substring(7);
     }

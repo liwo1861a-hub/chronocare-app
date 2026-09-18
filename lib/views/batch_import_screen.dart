@@ -56,7 +56,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           if (_tasks.isNotEmpty && !_isProcessing)
             TextButton.icon(
               icon: const Icon(Icons.done_all, color: Colors.white),
-              label: const Text('全部入库', style: TextStyle(color: Colors.white)),
+              label: const Text('按日期合并入库', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               onPressed: () => _saveAllCompletedTasks(recordsProv),
             ),
         ],
@@ -150,7 +150,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
                         const SizedBox(height: 12),
                         const Text('点击上方按钮批量选择化验单或报告单照片', style: TextStyle(color: Colors.grey)),
                         const SizedBox(height: 6),
-                        const Text('支持一键自动 OCR 与 Gemini 3.7 Flash 智能结构化整理', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        const Text('同一天的多张化验单将自动合并到时间轴的同一个档案中', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
                       ],
                     ),
                   )
@@ -190,7 +190,8 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
         return const Text('正在通过 Gemini 3.7 Flash 结构化整理...', style: TextStyle(color: Colors.purple, fontSize: 12));
       case BatchTaskStatus.completed:
         final count = task.result?.items.length ?? 0;
-        return Text('已解析 $count 个指标 · ${task.result?.hospital ?? ""}', style: const TextStyle(color: Colors.green, fontSize: 12));
+        final dStr = task.result?.checkDate?.toIso8601String().substring(0, 10) ?? '';
+        return Text('已解析 $count 个指标 · $dStr · ${task.result?.hospital ?? ""}', style: const TextStyle(color: Colors.green, fontSize: 12));
       case BatchTaskStatus.failed:
         return Text('失败: ${task.error}', style: const TextStyle(color: Colors.red, fontSize: 12));
     }
@@ -226,7 +227,6 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           ));
         }
       });
-      // 检查是否需要自动触发处理
       final settings = Provider.of<SettingsProvider>(context, listen: false).settings;
       if (settings.batchAutoOcr) {
         _runBatchPipeline(settings);
@@ -242,7 +242,6 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
 
       try {
         if (settings.batchAutoOcr && settings.batchAutoAiParse) {
-          // 全自动双开模式：Gemini 视觉直接识别结构化输出
           setState(() => task.status = BatchTaskStatus.aiParsing);
           final res = await AiService.instance.analyzeImageWithGemini(
             imageFile: task.file,
@@ -251,7 +250,6 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           task.result = res;
           task.status = BatchTaskStatus.completed;
         } else if (settings.batchAutoOcr) {
-          // 仅开启 OCR 开关
           setState(() => task.status = BatchTaskStatus.ocring);
           final text = await OcrService.instance.recognizeText(
             imageFile: task.file,
@@ -293,7 +291,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
   }
 
   void _saveAllCompletedTasks(RecordsProvider recordsProv) async {
-    int savedCount = 0;
+    int processedCount = 0;
     for (var task in _tasks) {
       if (task.status == BatchTaskStatus.completed && task.result != null) {
         final res = task.result!;
@@ -310,14 +308,15 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           items: res.items,
           medicationChanges: res.medicationChanges,
         );
-        await recordsProv.saveRecord(rec);
-        savedCount++;
+        // 调用智能合并方法：同一日期的检查单自动合并到同一个档案
+        await recordsProv.mergeOrSaveRecordByDate(rec);
+        processedCount++;
       }
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已成功自动入库 $savedCount 份复查记录！')),
+        SnackBar(content: Text('已自动按检查日期合并入库 $processedCount 份化验单！')),
       );
       Navigator.pop(context);
     }

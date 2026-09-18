@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/disease.dart';
 import '../models/record.dart';
 import '../models/app_settings.dart';
+import '../models/category_group.dart';
 
 class StorageService {
   static final StorageService instance = StorageService._();
@@ -22,7 +23,7 @@ class StorageService {
 
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE diseases (
@@ -57,6 +58,31 @@ class StorageService {
             updatedAt TEXT
           )
         ''');
+
+        await db.execute('''
+          CREATE TABLE category_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            iconName TEXT,
+            colorHex TEXT,
+            matchedItemNames TEXT,
+            notes TEXT
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS category_groups (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              iconName TEXT,
+              colorHex TEXT,
+              matchedItemNames TEXT,
+              notes TEXT
+            )
+          ''');
+        }
       },
     );
   }
@@ -98,6 +124,24 @@ class StorageService {
     await _db!.delete('records', where: 'id = ?', whereArgs: [id]);
   }
 
+  // --- 自定义检查项目分类分组操作 ---
+  Future<List<CategoryGroup>> getCategoryGroups() async {
+    final res = await _db!.query('category_groups');
+    return res.map((m) => CategoryGroup.fromMap(m)).toList();
+  }
+
+  Future<void> saveCategoryGroup(CategoryGroup group) async {
+    await _db!.insert(
+      'category_groups',
+      group.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteCategoryGroup(String id) async {
+    await _db!.delete('category_groups', where: 'id = ?', whereArgs: [id]);
+  }
+
   // --- 设置操作 ---
   Future<AppSettings> getSettings() async {
     if (_prefs == null) await init();
@@ -122,14 +166,16 @@ class StorageService {
   Future<Map<String, dynamic>> exportAllData() async {
     final diseases = await getDiseases();
     final records = await getRecords();
+    final groups = await getCategoryGroups();
     final settings = await getSettings();
 
     return {
       'app': 'ChronoCare',
-      'version': '1.0.0',
+      'version': '1.0.1',
       'exported_at': DateTime.now().toIso8601String(),
       'diseases': diseases.map((d) => d.toMap()).toList(),
       'records': records.map((r) => r.toMap()).toList(),
+      'category_groups': groups.map((g) => g.toMap()).toList(),
       'settings': settings.toMap(),
     };
   }
@@ -144,6 +190,11 @@ class StorageService {
     if (data['records'] != null && data['records'] is List) {
       for (var rMap in data['records']) {
         await saveRecord(CheckRecord.fromMap(Map<String, dynamic>.from(rMap)));
+      }
+    }
+    if (data['category_groups'] != null && data['category_groups'] is List) {
+      for (var gMap in data['category_groups']) {
+        await saveCategoryGroup(CategoryGroup.fromMap(Map<String, dynamic>.from(gMap)));
       }
     }
     if (data['settings'] != null && data['settings'] is Map) {

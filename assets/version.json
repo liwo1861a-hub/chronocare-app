@@ -1,18 +1,15 @@
 {
-  "version": "1.0.0",
-  "build_number": 1,
+  "version": "1.0.1",
+  "build_number": 2,
   "release_date": "2025-05-18",
   "app_name": "脉络健康 (ChronoCare)",
   "package_name": "com.liwo.chronocare",
   "changelog": [
-    "🚀 初始版本发布",
-    "✨ 支持慢病复查记录、检验单图片、医生就诊医嘱管理",
-    "🤖 接入 Google Gemini 3.7 Flash 视觉多模态大模型与免费 OCR 服务",
-    "⚡ 批量上传图片与双独立开关（自动 OCR + AI 智能结构化整理）",
-    "📈 核心检验指标历史横向对比与动态走势折线图",
-    "🎛️ 设置页新增【高级功能】专区，全软件无死角支持自定义",
-    "☁️ 支持 WebDAV 自动定时同步与全量 ZIP 本地备份/还原",
-    "🔄 支持 App 内一键检查更新与自动下载安装"
+    "✨ 智能合并：同一日期的化验单在时间轴自动合并至同一复查档案中",
+    "🤖 档案内支持独立添加/编辑医嘱，新增【AI 智能总结医嘱】功能",
+    "🎨 深度重构深色模式（Dark Mode），高对比度护眼配色，可读性大幅提升",
+    "🔬 检查分类全新重构：按真实 OCR 提取的项目名命名，支持创建自定义整合分类并自由移动整合",
+    "🚀 优化数据持久化与版本自动检测"
   ],
   "download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/latest"
 }

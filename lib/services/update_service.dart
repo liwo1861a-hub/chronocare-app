@@ -25,8 +25,8 @@ class UpdateService {
   static final UpdateService instance = UpdateService._();
   UpdateService._();
 
-  static const String currentVersion = '1.0.0';
-  static const int currentBuildNumber = 1;
+  static const String currentVersion = '1.0.1';
+  static const int currentBuildNumber = 2;
 
   static const String repoOwner = 'liwo1861a-hub';
   static const String repoName = 'chronocare-app';
@@ -61,7 +61,6 @@ class UpdateService {
       }
     }
 
-    // 判断版本是否比当前新
     String cleanRemote = tagName.replaceAll('v', '').replaceAll('V', '').trim();
     if (_isNewerVersion(cleanRemote, currentVersion)) {
       return ReleaseInfo(

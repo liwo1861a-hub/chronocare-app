@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.0",
-    "name": "ChronoCare v1.0.0 稳定版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.0 发布\n- 🌟 支持化验单图片、指标、医嘱、用药变更记录\n- 🤖 默认搭载 Gemini 3.7 Flash 多模态 AI 结构化识别与免费 OCR\n- ⚡ 批量扫单与双自动化开关控制\n- 📊 历史指标横向对比矩阵与多维走势图\n- ☁️ WebDAV 自动定时同步与本地 ZIP 备份\n- 🎛️ 设置-高级功能支持深度自定义",
-    "published_at": "2025-05-18T10:00:00Z",
+    "tag_name": "v1.0.1",
+    "name": "ChronoCare v1.0.1 智能合并与深度优化版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.1\n- ✨ 同日期检查单自动合并至同一复查档案\n- 🤖 支持档案独立编辑医嘱与 AI 智能总结医嘱\n- 🎨 全面优化深色模式色彩对比度，告别发暗发灰\n- 🔬 检查分类根据 OCR 真实名称命名，支持新建自定义分类与自由移动整合",
+    "published_at": "2025-05-18T12:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.0-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.0/app-release.apk"
+        "name": "chronocare-v1.0.1-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.1/app-release.apk"
       }
     ]
   }

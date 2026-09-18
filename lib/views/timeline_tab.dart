@@ -15,6 +15,7 @@ class TimelineTab extends StatelessWidget {
     final recordsProv = Provider.of<RecordsProvider>(context);
     final settingsProv = Provider.of<SettingsProvider>(context);
     final settings = settingsProv.settings;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final records = recordsProv.getFilteredRecords(
       sortOrder: settings.defaultRecordSort,
@@ -54,8 +55,15 @@ class TimelineTab extends StatelessWidget {
 
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
-          elevation: 1.5,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: isDark ? 0 : 1.5,
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: isDark ? const Color(0xFF334155) : Colors.grey.shade200,
+              width: 1,
+            ),
+          ),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: () {
@@ -77,11 +85,15 @@ class TimelineTab extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.calendar_today, size: 15, color: Colors.blueAccent),
+                          const Icon(Icons.calendar_today, size: 15, color: Color(0xFF38BDF8)),
                           const SizedBox(width: 6),
                           Text(
                             DateFormat('yyyy年MM月dd日').format(record.checkDate),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: isDark ? const Color(0xFFF8FAFC) : Colors.black87,
+                            ),
                           ),
                         ],
                       ),
@@ -90,15 +102,21 @@ class TimelineTab extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: Color(int.parse(disease.colorHex.replaceFirst('#', '0xFF')))
-                                .withOpacity(0.15),
+                                .withOpacity(isDark ? 0.25 : 0.15),
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Color(int.parse(disease.colorHex.replaceFirst('#', '0xFF')))
+                                  .withOpacity(0.5),
+                            ),
                           ),
                           child: Text(
                             disease.name,
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: Color(int.parse(disease.colorHex.replaceFirst('#', '0xFF'))),
+                              color: isDark
+                                  ? const Color(0xFF93C5FD)
+                                  : Color(int.parse(disease.colorHex.replaceFirst('#', '0xFF'))),
                             ),
                           ),
                         ),
@@ -109,27 +127,27 @@ class TimelineTab extends StatelessWidget {
                   // 医院与科室
                   Row(
                     children: [
-                      Icon(Icons.local_hospital_outlined, size: 14, color: Colors.grey.shade600),
+                      Icon(Icons.local_hospital_outlined, size: 14, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                       const SizedBox(width: 4),
                       Text(
                         '${record.hospital.isNotEmpty ? record.hospital : "未填写医院"} · ${record.department.isNotEmpty ? record.department : "门诊"}',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                        style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFCBD5E1) : Colors.grey.shade700),
                       ),
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: isDark ? const Color(0xFF334155) : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           record.category,
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                          style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                         ),
                       ),
                     ],
                   ),
-                  const Divider(height: 18),
+                  Divider(height: 18, color: isDark ? const Color(0xFF334155) : null),
 
                   // 关键指标摘要与异常项胶囊
                   if (record.items.isNotEmpty) ...[
@@ -142,18 +160,22 @@ class TimelineTab extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: isAbnormal
-                                ? Colors.red.shade50
-                                : Colors.blue.shade50.withOpacity(0.5),
+                                ? (isDark ? const Color(0xFF881337).withOpacity(0.4) : Colors.red.shade50)
+                                : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.4) : Colors.blue.shade50.withOpacity(0.5)),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: isAbnormal ? Colors.red.shade200 : Colors.blue.shade100,
+                              color: isAbnormal
+                                  ? (isDark ? const Color(0xFFF43F5E) : Colors.red.shade200)
+                                  : (isDark ? const Color(0xFF38BDF8) : Colors.blue.shade100),
                             ),
                           ),
                           child: Text(
-                            '${item.itemName}: ${item.value} ${item.unit} ${isAbnormal ? "↑" : ""}',
+                            '${item.itemName}: ${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: isAbnormal ? Colors.red.shade700 : Colors.black87,
+                              color: isAbnormal
+                                  ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                  : (isDark ? const Color(0xFFBAE6FD) : Colors.black87),
                               fontWeight: isAbnormal ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
@@ -168,32 +190,32 @@ class TimelineTab extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.medical_services_outlined, size: 14, color: Colors.green),
+                        const Icon(Icons.medical_services_outlined, size: 14, color: Color(0xFF10B981)),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             '医嘱: ${record.doctorAdvice}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                            style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFFE2E8F0) : Colors.black87),
                           ),
                         ),
                       ],
                     ),
                   ],
 
-                  // 底部操作区（图片角标与快速编辑）
+                  // 底部操作区（已合并图片角标与快速编辑）
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       if (record.imagePaths.isNotEmpty)
                         Row(
                           children: [
-                            const Icon(Icons.image, size: 13, color: Colors.grey),
+                            const Icon(Icons.image, size: 13, color: Color(0xFF38BDF8)),
                             const SizedBox(width: 4),
                             Text(
-                              '${record.imagePaths.length} 张化验单',
-                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              '${record.imagePaths.length} 张化验单 (已合并)',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF38BDF8)),
                             ),
                           ],
                         )
@@ -213,7 +235,7 @@ class TimelineTab extends StatelessWidget {
                             },
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                            icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFF43F5E)),
                             onPressed: () {
                               _confirmDelete(context, recordsProv, record.id);
                             },
@@ -243,7 +265,7 @@ class TimelineTab extends StatelessWidget {
             child: const Text('取消'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF43F5E)),
             onPressed: () {
               prov.deleteRecord(id);
               Navigator.pop(ctx);
