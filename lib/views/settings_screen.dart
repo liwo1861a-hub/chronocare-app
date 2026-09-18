@@ -84,8 +84,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // 1. WebDAV 云同步配置
-          const Text('☁️ WebDAV 云端全量同步 (含全部图片与设置)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          // 1. WebDAV 云同步配置与自动同步时间设置
+          const Text('☁️ WebDAV 云端全量同步与定时策略', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -126,10 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: s.autoSyncInterval,
-                      decoration: const InputDecoration(labelText: '自动同步时机'),
+                      decoration: const InputDecoration(labelText: '自动同步策略'),
                       items: const [
+                        DropdownMenuItem(value: 'daily', child: Text('每日指定时间自动静默同步')),
                         DropdownMenuItem(value: 'on_startup', child: Text('每次启动 App 时自动拉取')),
-                        DropdownMenuItem(value: 'daily', child: Text('每日固定时间自动同步')),
                         DropdownMenuItem(value: 'manual', child: Text('仅手动同步')),
                       ],
                       onChanged: (val) {
@@ -139,6 +139,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }
                       },
                     ),
+                    // 允许用户精确自定义同步时间点
+                    if (s.autoSyncInterval == 'daily') ...[
+                      const SizedBox(height: 10),
+                      ListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: Colors.blue.withOpacity(0.3)),
+                        ),
+                        leading: const Icon(Icons.access_time, color: Colors.blueAccent),
+                        title: const Text('每日自动同步时间', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        subtitle: Text('将在每天 ${s.autoSyncTime} 自动静默同步全部数据与图片'),
+                        trailing: ElevatedButton(
+                          style: ElevatedButton.styleFrom(visualDensity: VisualDensity.compact),
+                          onPressed: () => _pickSyncTime(context, s, prov),
+                          child: Text(s.autoSyncTime),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -280,6 +298,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickSyncTime(BuildContext context, s, SettingsProvider prov) async {
+    final parts = s.autoSyncTime.split(':');
+    final initialHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 22 : 22;
+    final initialMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: initialHour, minute: initialMinute),
+    );
+
+    if (picked != null) {
+      final hourStr = picked.hour.toString().padLeft(2, '0');
+      final minStr = picked.minute.toString().padLeft(2, '0');
+      s.autoSyncTime = '$hourStr:$minStr';
+      prov.updateSettings(s);
+    }
   }
 
   Future<void> _testWebdav(s) async {

@@ -2,9 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import '../providers/records_provider.dart';
 import '../providers/settings_provider.dart';
 import '../models/record.dart';
+import '../models/check_item.dart';
 import '../services/ai_service.dart';
 import 'record_edit_screen.dart';
 
@@ -24,6 +26,8 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
   Widget build(BuildContext context) {
     final prov = Provider.of<RecordsProvider>(context);
     final settings = Provider.of<SettingsProvider>(context).settings;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final record = prov.records.firstWhere(
       (r) => r.id == widget.recordId,
       orElse: () => CheckRecord(
@@ -42,9 +46,16 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     final disease = prov.getDiseaseById(record.diseaseId);
 
+    // 按检查项目大类/单据分类进行分栏目组织
+    final Map<String, List<CheckItem>> categorizedItems = {};
+    for (var item in record.items) {
+      final cat = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验项目';
+      categorizedItems.putIfAbsent(cat, () => []).add(item);
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('${DateFormat("yyyy-MM-dd").format(record.checkDate)} 复查详情'),
+        title: Text('${DateFormat("yyyy-MM-dd").format(record.checkDate)} 复查档案'),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
@@ -85,14 +96,14 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            record.category,
+                            '共 ${categorizedItems.keys.length} 个检验单栏目',
                             style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w600, fontSize: 12),
                           ),
                         ),
                       ],
                     ),
                     const Divider(height: 24),
-                    _buildInfoRow(Icons.calendar_today, '复查日期', DateFormat('yyyy年MM月dd日').format(record.checkDate)),
+                    _buildInfoRow(Icons.calendar_today, '开单检查日期', DateFormat('yyyy年MM月dd日').format(record.checkDate)),
                     if (record.nextCheckDate != null)
                       _buildInfoRow(Icons.alarm, '下次复查提醒', DateFormat('yyyy年MM月dd日').format(record.nextCheckDate!)),
                     _buildInfoRow(Icons.local_hospital, '就诊医院', record.hospital.isNotEmpty ? record.hospital : '未注明'),
@@ -135,8 +146,11 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             ),
             const SizedBox(height: 8),
             Card(
-              color: Colors.green.withOpacity(0.08),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              color: isDark ? const Color(0xFF1E293B) : Colors.green.withOpacity(0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: isDark ? const Color(0xFF334155) : Colors.green.withOpacity(0.2)),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: record.doctorAdvice.isNotEmpty
@@ -144,88 +158,212 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                     : const Text('暂无医生医嘱，点击上方【AI 总结医嘱】或右上角笔形图标单独添加', style: TextStyle(color: Colors.grey, fontSize: 13)),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // 化验单原图预览
-            if (record.imagePaths.isNotEmpty) ...[
-              Text('化验单照片 (${record.imagePaths.length}张 已合并)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 140,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: record.imagePaths.length,
-                  itemBuilder: (context, index) {
-                    final path = record.imagePaths[index];
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => Scaffold(
-                              appBar: AppBar(title: const Text('查看化验单原图')),
-                              backgroundColor: Colors.black,
-                              body: Center(child: InteractiveViewer(child: Image.file(File(path)))),
-                            ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        width: 140,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                          image: DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover),
-                        ),
-                      ),
-                    );
-                  },
+            // 核心重构：根据检查项目名称分栏目展示（每个栏目包含原图和项目结果）
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '化验单与检验项目明细 (按项目分栏目)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                Text(
+                  '共 ${record.items.length} 项指标 · ${record.imagePaths.length} 张图片',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
 
-            // 检验指标列表
-            Text('检验指标详情 (${record.items.length}项)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              child: record.items.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Text('暂无结构化检验指标', style: TextStyle(color: Colors.grey)),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: record.items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final item = record.items[index];
-                        final isAbnormal = item.status != 'normal';
-                        return ListTile(
-                          title: Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text('参考范围: ${item.referenceRange.isNotEmpty ? item.referenceRange : "未注明"} ${item.notes.isNotEmpty ? "· 备注: ${item.notes}" : ""}'),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isAbnormal ? Colors.red.withOpacity(0.15) : Colors.green.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
+            if (categorizedItems.isEmpty && record.imagePaths.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Center(child: Text('暂无检查项目或化验单照片', style: TextStyle(color: Colors.grey))),
+                ),
+              )
+            else ...[
+              // 遍历每个检查项目栏目
+              ...categorizedItems.entries.map((entry) {
+                final categoryName = entry.key;
+                final items = entry.value;
+                final abnormalCount = items.where((i) => i.status != 'normal').length;
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  elevation: 1.5,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : Colors.blue.withOpacity(0.2),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 栏目标题与异常胶囊
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: Colors.blue.withOpacity(0.15),
+                                  child: const Icon(Icons.science, size: 16, color: Colors.blueAccent),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  categoryName,
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                              ],
                             ),
-                            child: Text(
-                              '${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
-                              style: TextStyle(
-                                color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                            if (abnormalCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.red.withOpacity(0.4)),
+                                ),
+                                child: Text(
+                                  '$abnormalCount 项异常',
+                                  style: const TextStyle(color: Color(0xFFF43F5E), fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  '全部正常',
+                                  style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
                               ),
+                          ],
+                        ),
+                        const Divider(height: 20),
+
+                        // 栏目下的化验单原图预览
+                        if (record.imagePaths.isNotEmpty) ...[
+                          const Text('📷 对应化验单原图：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 100,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: record.imagePaths.length,
+                              itemBuilder: (ctx, imgIdx) {
+                                final imgPath = record.imagePaths[imgIdx];
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => Scaffold(
+                                          appBar: AppBar(title: Text('$categoryName 化验单原图 #${imgIdx + 1}')),
+                                          backgroundColor: Colors.black,
+                                          body: Center(child: InteractiveViewer(child: Image.file(File(imgPath)))),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.only(right: 10),
+                                    width: 100,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: isDark ? const Color(0xFF475569) : Colors.grey.shade300),
+                                      image: DecorationImage(image: FileImage(File(imgPath)), fit: BoxFit.cover),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        );
-                      },
+                          const SizedBox(height: 12),
+                        ],
+
+                        // 栏目下的检验指标表格
+                        const Text('📊 检验指标结果：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                        const SizedBox(height: 6),
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
+                          itemBuilder: (ctx, itemIdx) {
+                            final item = items[itemIdx];
+                            final isAbnormal = item.status != 'normal';
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    flex: 4,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          item.itemName,
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                        ),
+                                        Text(
+                                          '参考值: ${item.referenceRange.isNotEmpty ? item.referenceRange : "未注明"} ${item.notes.isNotEmpty ? "· " + item.notes : ""}',
+                                          style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 3,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: isAbnormal
+                                              ? (isDark ? const Color(0xFF881337).withOpacity(0.5) : Colors.red.shade50)
+                                              : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.5) : Colors.green.shade50),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
+                                          style: TextStyle(
+                                            color: isAbnormal
+                                                ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                                : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-            ),
+                  ),
+                );
+              }),
+            ],
             const SizedBox(height: 16),
 
             // 用药调整

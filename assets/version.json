@@ -1,14 +1,14 @@
 {
-  "version": "1.0.3",
-  "build_number": 4,
+  "version": "1.0.4",
+  "build_number": 5,
   "release_date": "2025-05-18",
   "app_name": "脉络健康 (ChronoCare)",
   "package_name": "com.liwo.chronocare",
   "changelog": [
-    "💾 100% 全量极致备份与云同步：支持备份与还原所有病历、检验指标、化验单照片原图、自定义设置、API Keys、OCR参数与自定义分类",
-    "☁️ WebDAV 双向全量图文同步：支持将图片无损同步至云端，换机或重装后一键还原即用，零配置零检查",
-    "🔒 永久固化 Release 签名：从此所有版本均支持 App 内一键检测就地覆盖升级",
-    "📅 开单日期精准合并：严格按医生开检查单的日期进行时间轴档案自动归类合并"
+    "📋 化验单按项目分栏目重构：化验单合并后不再混合指标，按项目/单据大类独立分栏，栏目下包含对应化验单原图预览与指标表格，大幅提升可读性",
+    "⏰ WebDAV 自动同步支持精确自定义时间点（原生 TimePicker 选择时分，支持每日指定时间静默同步）",
+    "💾 100% 全量图文/设置无损备份与双向云还原",
+    "🔒 永久固化 Release 签名，支持后续所有版本 App 内一键覆盖升级"
   ],
   "download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/latest"
 }
