@@ -21,6 +21,8 @@ class RecordDetailScreen extends StatefulWidget {
 
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
   bool _isSummarizingAdvice = false;
+  int _selectedCategoryIndex = 0;
+  bool _showOnlyCurrentCategoryImages = true; // true: 仅看当前栏目对应图片; false: 查看本次所有化验单图片
 
   @override
   Widget build(BuildContext context) {
@@ -46,12 +48,41 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     final disease = prov.getDiseaseById(record.diseaseId);
 
-    // 按检查项目大类/单据分类进行分栏目组织
+    // 1. 按检查项目大类/单据分类进行分栏目聚合
     final Map<String, List<CheckItem>> categorizedItems = {};
     for (var item in record.items) {
       final cat = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验项目';
       categorizedItems.putIfAbsent(cat, () => []).add(item);
     }
+
+    final categoryNames = categorizedItems.keys.toList();
+    if (_selectedCategoryIndex >= categoryNames.length && categoryNames.isNotEmpty) {
+      _selectedCategoryIndex = categoryNames.length - 1;
+    }
+
+    final currentCategory = categoryNames.isNotEmpty ? categoryNames[_selectedCategoryIndex] : '常规化验';
+    final currentItems = categorizedItems[currentCategory] ?? [];
+
+    // 2. 收集当前栏目对应的化验单图片
+    final Set<String> currentCategoryImages = {};
+    for (var it in currentItems) {
+      if (it.sourceImagePath.isNotEmpty) {
+        currentCategoryImages.add(it.sourceImagePath);
+      }
+    }
+    // 若单项未独立打标但记录只有 1 张图，或当前栏目未匹配到图片，则智能关联
+    if (currentCategoryImages.isEmpty && record.imagePaths.isNotEmpty) {
+      if (categoryNames.length == 1) {
+        currentCategoryImages.addAll(record.imagePaths);
+      }
+    }
+
+    // 根据模式决定展示哪些图片
+    final List<String> displayImages = _showOnlyCurrentCategoryImages
+        ? currentCategoryImages.toList()
+        : record.imagePaths;
+
+    final abnormalCount = currentItems.where((i) => i.status != 'normal').length;
 
     return Scaffold(
       appBar: AppBar(
@@ -59,7 +90,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            tooltip: '编辑档案',
+            tooltip: '编辑整份档案',
             onPressed: () {
               Navigator.push(
                 context,
@@ -96,7 +127,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            '共 ${categorizedItems.keys.length} 个检验单栏目',
+                            '共 ${categoryNames.length} 个检验栏目',
                             style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w600, fontSize: 12),
                           ),
                         ),
@@ -114,7 +145,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             ),
             const SizedBox(height: 16),
 
-            // 医生医嘱（支持独立添加、编辑与 AI 智能总结）
+            // 医生医嘱
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -160,209 +191,317 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 核心重构：根据检查项目名称分栏目展示（每个栏目包含原图和项目结果）
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '化验单与检验项目明细 (按项目分栏目)',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '共 ${record.items.length} 项指标 · ${record.imagePaths.length} 张图片',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+            // 核心重构：横向滑动选择检查栏目 (OCR 命名 + 可修改名称)
+            const Text(
+              '检查项目栏目 (横向滑动选择)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
 
-            if (categorizedItems.isEmpty && record.imagePaths.isEmpty)
+            if (categoryNames.isEmpty)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(20.0),
-                  child: Center(child: Text('暂无检查项目或化验单照片', style: TextStyle(color: Colors.grey))),
+                  child: Center(child: Text('暂无检查栏目或化验单', style: TextStyle(color: Colors.grey))),
                 ),
               )
             else ...[
-              // 遍历每个检查项目栏目
-              ...categorizedItems.entries.map((entry) {
-                final categoryName = entry.key;
-                final items = entry.value;
-                final abnormalCount = items.where((i) => i.status != 'normal').length;
+              // 横向选择栏目条 (Horizontal Scroll Selector)
+              SizedBox(
+                height: 46,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: categoryNames.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, idx) {
+                    final catName = categoryNames[idx];
+                    final isSelected = idx == _selectedCategoryIndex;
+                    final count = categorizedItems[catName]?.length ?? 0;
+                    final hasAbnormal = categorizedItems[catName]?.any((i) => i.status != 'normal') ?? false;
 
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  elevation: 1.5,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: isDark ? const Color(0xFF334155) : Colors.blue.withOpacity(0.2),
-                      width: 1.2,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 栏目标题与异常胶囊
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedCategoryIndex = idx);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? (isDark ? const Color(0xFF0284C7) : Colors.blue.shade600)
+                              : (isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.lightBlueAccent
+                                : (isDark ? const Color(0xFF334155) : Colors.grey.shade300),
+                            width: isSelected ? 1.8 : 1.0,
+                          ),
+                          boxShadow: isSelected
+                              ? [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 14,
-                                  backgroundColor: Colors.blue.withOpacity(0.15),
-                                  child: const Icon(Icons.science, size: 16, color: Colors.blueAccent),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  categoryName,
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                            if (abnormalCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.red.withOpacity(0.4)),
-                                ),
-                                child: Text(
-                                  '$abnormalCount 项异常',
-                                  style: const TextStyle(color: Color(0xFFF43F5E), fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  '全部正常',
-                                  style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                            if (hasAbnormal)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF43F5E),
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
                               ),
+                            Text(
+                              catName,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.white.withOpacity(0.25) : Colors.black.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$count',
+                                style: TextStyle(
+                                  color: isSelected ? Colors.white : Colors.grey.shade700,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const Divider(height: 20),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
 
-                        // 栏目下的化验单原图预览
-                        if (record.imagePaths.isNotEmpty) ...[
-                          const Text('📷 对应化验单原图：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            height: 100,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: record.imagePaths.length,
-                              itemBuilder: (ctx, imgIdx) {
-                                final imgPath = record.imagePaths[imgIdx];
-                                return GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => Scaffold(
-                                          appBar: AppBar(title: Text('$categoryName 化验单原图 #${imgIdx + 1}')),
-                                          backgroundColor: Colors.black,
-                                          body: Center(child: InteractiveViewer(child: Image.file(File(imgPath)))),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(right: 10),
-                                    width: 100,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: isDark ? const Color(0xFF475569) : Colors.grey.shade300),
-                                      image: DecorationImage(image: FileImage(File(imgPath)), fit: BoxFit.cover),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // 栏目下的检验指标表格
-                        const Text('📊 检验指标结果：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-                        const SizedBox(height: 6),
-                        ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
-                          itemBuilder: (ctx, itemIdx) {
-                            final item = items[itemIdx];
-                            final isAbnormal = item.status != 'normal';
-
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    flex: 4,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.itemName,
-                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                        ),
-                                        Text(
-                                          '参考值: ${item.referenceRange.isNotEmpty ? item.referenceRange : "未注明"} ${item.notes.isNotEmpty ? "· " + item.notes : ""}',
-                                          style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: isAbnormal
-                                              ? (isDark ? const Color(0xFF881337).withOpacity(0.5) : Colors.red.shade50)
-                                              : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.5) : Colors.green.shade50),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
-                                          style: TextStyle(
-                                            color: isAbnormal
-                                                ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
-                                                : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+              // 当前选中栏目的详细内容面板 (含栏目名修改、图片显示切换与指标明细)
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                    color: isDark ? const Color(0xFF334155) : Colors.blue.withOpacity(0.25),
+                    width: 1.2,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 栏目标题行：支持点击笔形图标重命名栏目名称
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Colors.blue.withOpacity(0.15),
+                                child: const Icon(Icons.science, size: 16, color: Colors.blueAccent),
                               ),
+                              const SizedBox(width: 8),
+                              Text(
+                                currentCategory,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.drive_file_rename_outline, size: 18, color: Colors.blueAccent),
+                                tooltip: '重命名此栏目名称',
+                                onPressed: () => _renameCategoryDialog(context, currentCategory, record, prov),
+                              ),
+                            ],
+                          ),
+                          if (abnormalCount > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.red.withOpacity(0.4)),
+                              ),
+                              child: Text(
+                                '$abnormalCount 项异常',
+                                style: const TextStyle(color: Color(0xFFF43F5E), fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                '全部正常',
+                                style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const Divider(height: 20),
+
+                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”，支持横向无缝滑动
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _showOnlyCurrentCategoryImages ? '📷 对应化验单原图 (${displayImages.length}张)' : '📷 本次复查所有化验单 (${displayImages.length}张)',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey),
+                          ),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                            ),
+                            icon: Icon(
+                              _showOnlyCurrentCategoryImages ? Icons.filter_alt_outlined : Icons.collections_outlined,
+                              size: 14,
+                            ),
+                            label: Text(
+                              _showOnlyCurrentCategoryImages ? '切换为看所有图片' : '切换为仅看对应图片',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showOnlyCurrentCategoryImages = !_showOnlyCurrentCategoryImages;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+
+                      if (displayImages.isNotEmpty)
+                        SizedBox(
+                          height: 110,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: displayImages.length,
+                            itemBuilder: (ctx, imgIdx) {
+                              final imgPath = displayImages[imgIdx];
+                              return GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => Scaffold(
+                                        appBar: AppBar(title: Text('$currentCategory 原图 #${imgIdx + 1}')),
+                                        backgroundColor: Colors.black,
+                                        body: Center(child: InteractiveViewer(child: Image.file(File(imgPath)))),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(right: 10),
+                                  width: 105,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: isDark ? const Color(0xFF475569) : Colors.grey.shade300),
+                                    image: DecorationImage(image: FileImage(File(imgPath)), fit: BoxFit.cover),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text('本栏目暂无单独绑定的原图 (可点击右上角切换为查看所有图片)', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+
+                      // 栏目下的检验指标结果表格
+                      const Text('📊 检验指标结果：', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                      const SizedBox(height: 6),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: currentItems.length,
+                        separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
+                        itemBuilder: (ctx, itemIdx) {
+                          final item = currentItems[itemIdx];
+                          final isAbnormal = item.status != 'normal';
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  flex: 4,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.itemName,
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                      ),
+                                      Text(
+                                        '参考值: ${item.referenceRange.isNotEmpty ? item.referenceRange : "未注明"} ${item.notes.isNotEmpty ? "· " + item.notes : ""}',
+                                        style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: isAbnormal
+                                            ? (isDark ? const Color(0xFF881337).withOpacity(0.5) : Colors.red.shade50)
+                                            : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.5) : Colors.green.shade50),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
+                                        style: TextStyle(
+                                          color: isAbnormal
+                                              ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                              : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
-                      ],
-                    ),
+                    ],
                   ),
-                );
-              }),
+                ),
+              ),
             ],
             const SizedBox(height: 16),
 
@@ -458,6 +597,43 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     } finally {
       if (mounted) setState(() => _isSummarizingAdvice = false);
     }
+  }
+
+  void _renameCategoryDialog(BuildContext context, String oldCategory, CheckRecord record, RecordsProvider prov) {
+    final ctrl = TextEditingController(text: oldCategory);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名栏目名称'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '栏目名称',
+            hintText: '例如：血常规、肝功能全套、生化全项',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = ctrl.text.trim();
+              if (newName.isNotEmpty && newName != oldCategory) {
+                for (var item in record.items) {
+                  if (item.category.trim() == oldCategory) {
+                    item.category = newName;
+                  }
+                }
+                await prov.saveRecord(record);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _editSingleAdviceDialog(BuildContext context, CheckRecord record, RecordsProvider prov) {

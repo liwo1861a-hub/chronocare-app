@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.4",
-    "name": "ChronoCare v1.0.4 分栏目图文展示与定时同步优化版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.4\n- 📋 化验单按项目分栏目组织：每个项目大类独立成卡片，栏目下包含对应化验单原图预览 + 检验指标表格\n- ⏰ WebDAV 自动同步支持精确自定义时间点（如每天 22:30 自动静默同步）\n- 💾 100% 全量图文备份与 WebDAV 双向同步\n- 🔒 永久固化 Release 签名支持无缝就地升级",
-    "published_at": "2025-05-18T15:00:00Z",
+    "tag_name": "v1.0.5",
+    "name": "ChronoCare v1.0.5 横向栏目选择与专属图文绑定重构版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.5\n- 📑 检查栏目横向滑动选择：在顶部横向切换各单据栏目，支持实时异常高亮与指标计数\n- 📷 专属原图绑定与模式切换：各栏目默认仅展示对应化验单原图，支持一键切换查看所有图片，左右平滑滑动与缩放\n- ✏️ 栏目名称支持随时点击自定义重命名\n- ⏰ WebDAV 自动同步精确自定义时间点\n- 🔒 永久固化签名无缝升级",
+    "published_at": "2025-05-18T16:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.4-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.4/app-release.apk"
+        "name": "chronocare-v1.0.5-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.5/app-release.apk"
       }
     ]
   }

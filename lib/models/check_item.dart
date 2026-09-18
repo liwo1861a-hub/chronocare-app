@@ -8,8 +8,9 @@ class CheckItem {
   double? refMin; // 范围下限
   double? refMax; // 范围上限
   String status; // 'normal', 'high', 'low', 'abnormal'
-  String category; // 项目大类：如 肝功能, 肾功能, 血糖类, 血常规, 影像结论
-  String notes; // 单项备注（如：比上次有所改善）
+  String category; // 项目大类/单据栏目名：如 血液生化, 肝功能, 血常规, 尿常规
+  String sourceImagePath; // 对应的化验单原图路径
+  String notes; // 单项备注
 
   CheckItem({
     required this.id,
@@ -21,17 +22,16 @@ class CheckItem {
     this.refMin,
     this.refMax,
     this.status = 'normal',
-    this.category = '通用检验',
+    this.category = '常规检验',
+    this.sourceImagePath = '',
     this.notes = '',
   }) {
-    // 尝试解析数值
     if (numericValue == null) {
       final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(value);
       if (match != null) {
         numericValue = double.tryParse(match.group(0)!);
       }
     }
-    // 尝试自动解析参考值上下限
     _parseRefRange();
   }
 
@@ -66,6 +66,7 @@ class CheckItem {
       'refMax': refMax,
       'status': status,
       'category': category,
+      'sourceImagePath': sourceImagePath,
       'notes': notes,
     };
   }
@@ -83,7 +84,8 @@ class CheckItem {
       refMin: map['refMin'] != null ? (map['refMin'] as num).toDouble() : null,
       refMax: map['refMax'] != null ? (map['refMax'] as num).toDouble() : null,
       status: map['status'] ?? 'normal',
-      category: map['category'] ?? '通用检验',
+      category: map['category'] ?? '常规检验',
+      sourceImagePath: map['sourceImagePath'] ?? '',
       notes: map['notes'] ?? '',
     );
   }

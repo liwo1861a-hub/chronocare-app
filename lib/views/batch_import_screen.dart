@@ -150,7 +150,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
                         const SizedBox(height: 12),
                         const Text('点击上方按钮批量选择化验单或报告单照片', style: TextStyle(color: Colors.grey)),
                         const SizedBox(height: 6),
-                        const Text('同一天的多张化验单将自动合并到时间轴的同一个档案中', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
+                        const Text('同一开单日期的化验单将自动合并，并按检查项目分栏目管理', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
                       ],
                     ),
                   )
@@ -191,7 +191,8 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       case BatchTaskStatus.completed:
         final count = task.result?.items.length ?? 0;
         final dStr = task.result?.checkDate?.toIso8601String().substring(0, 10) ?? '';
-        return Text('已解析 $count 个指标 · $dStr · ${task.result?.hospital ?? ""}', style: const TextStyle(color: Colors.green, fontSize: 12));
+        final cat = task.result?.category ?? '检验项目';
+        return Text('已解析 $count 个指标 · $cat · $dStr', style: const TextStyle(color: Colors.green, fontSize: 12));
       case BatchTaskStatus.failed:
         return Text('失败: ${task.error}', style: const TextStyle(color: Colors.red, fontSize: 12));
     }
@@ -247,6 +248,16 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
             imageFile: task.file,
             settings: settings,
           );
+
+          // 核心绑定：将当次识别出来的所有 items 的 sourceImagePath 绑定为当前图片
+          final categoryName = res.category.isNotEmpty ? res.category : '常规化验';
+          for (var item in res.items) {
+            item.sourceImagePath = task.file.path;
+            if (item.category.isEmpty || item.category == '常规检验') {
+              item.category = categoryName;
+            }
+          }
+
           task.result = res;
           task.status = BatchTaskStatus.completed;
         } else if (settings.batchAutoOcr) {
@@ -308,7 +319,6 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           items: res.items,
           medicationChanges: res.medicationChanges,
         );
-        // 调用智能合并方法：同一日期的检查单自动合并到同一个档案
         await recordsProv.mergeOrSaveRecordByDate(rec);
         processedCount++;
       }
@@ -316,7 +326,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已自动按检查日期合并入库 $processedCount 份化验单！')),
+        SnackBar(content: Text('已自动按开单日期合并入库 $processedCount 份化验单！')),
       );
       Navigator.pop(context);
     }
