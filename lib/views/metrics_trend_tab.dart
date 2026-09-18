@@ -14,11 +14,21 @@ class MetricsTrendTab extends StatefulWidget {
 
 class _MetricsTrendTabState extends State<MetricsTrendTab> {
   String? _selectedItemName;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchKeyword = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final prov = Provider.of<RecordsProvider>(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final allItems = prov.getAllItemNames();
+    final filteredItems = prov.searchItemNames(_searchKeyword);
 
     if (allItems.isEmpty) {
       return Center(
@@ -27,14 +37,16 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
           children: [
             Icon(Icons.show_chart, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 12),
-            const Text('暂无指标数据，请先录入复查化验单'),
+            const Text('暂无指标数据，请先录入或扫描复查化验单'),
           ],
         ),
       );
     }
 
-    // 默认选择第一个指标
-    _selectedItemName ??= allItems.first;
+    if (_selectedItemName == null || !allItems.contains(_selectedItemName)) {
+      _selectedItemName = filteredItems.isNotEmpty ? filteredItems.first : allItems.first;
+    }
+
     final history = prov.getMetricHistory(_selectedItemName!);
 
     return Scaffold(
@@ -43,48 +55,91 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 指标选择下拉框
+            // 1. 关键词即时搜索单独项目
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.analytics_outlined, color: Colors.blueAccent),
-                    const SizedBox(width: 10),
-                    const Text('追踪指标：', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Expanded(
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: allItems.contains(_selectedItemName) ? _selectedItemName : allItems.first,
-                          isExpanded: true,
-                          items: allItems.map((name) {
-                            return DropdownMenuItem(
-                              value: name,
-                              child: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedItemName = val);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: '输入关键词搜索单独指标 (如: 肌酐、血糖、转氨酶、HbA1c)...',
+                    hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
+                    prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
+                    suffixIcon: _searchKeyword.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchKeyword = '');
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) {
+                    setState(() {
+                      _searchKeyword = val.trim();
+                      final matched = prov.searchItemNames(_searchKeyword);
+                      if (matched.isNotEmpty && !matched.contains(_selectedItemName)) {
+                        _selectedItemName = matched.first;
+                      }
+                    });
+                  },
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+
+            // 搜索结果快捷标签栏 / 当前追踪指标选择器
+            if (filteredItems.isNotEmpty) ...[
+              SizedBox(
+                height: 38,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: filteredItems.length,
+                  separatorBuilder: (c, i) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final name = filteredItems[index];
+                    final isSelected = name == _selectedItemName;
+                    return ChoiceChip(
+                      label: Text(name, style: TextStyle(fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                      selected: isSelected,
+                      selectedColor: isDark ? const Color(0xFF0284C7) : Colors.blue.shade600,
+                      labelStyle: TextStyle(color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87)),
+                      onSelected: (selected) {
+                        if (selected) setState(() => _selectedItemName = name);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ] else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text('未找到包含“$_searchKeyword”的指标，可重试其他关键词', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ),
+            const SizedBox(height: 14),
 
             if (history.isEmpty)
-              const Center(
+              Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: Text('该指标暂无数值型记录'),
+                  padding: const EdgeInsets.all(32.0),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.grey, size: 36),
+                        const SizedBox(height: 8),
+                        Text('【$_selectedItemName】暂无数值型历史记录', style: const TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
                 ),
               )
             else ...[
-              // 走势折线图卡片
+              // 2. 走势折线图卡片 (支持所有正常与异常指标)
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -96,20 +151,42 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '$_selectedItemName 历史趋势',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          Row(
+                            children: [
+                              const CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Colors.blueAccent,
+                                child: Icon(Icons.show_chart, size: 16, color: Colors.white),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '$_selectedItemName 历史走势图',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                          Text(
-                            '单位: ${history.first.unit}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '单位: ${history.first.unit.isNotEmpty ? history.first.unit : "数值"}',
+                              style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '共包含 ${history.length} 次复查测定数据 (点击数据点或下方列表可定位大报告单)',
+                        style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(
                         height: 220,
-                        child: _buildLineChart(history),
+                        child: _buildLineChart(history, isDark),
                       ),
                     ],
                   ),
@@ -117,10 +194,19 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
               ),
               const SizedBox(height: 18),
 
-              // 横向对比表格
-              const Text(
-                '历次复查数值横向对比',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              // 3. 历次复查指标明细与【反向定位链接至大项目报告单】
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '历次检测明细 (点击可直接跳转大报告单)',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '共 ${history.length} 条记录',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
 
@@ -130,13 +216,12 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: history.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (c, i) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
                   itemBuilder: (context, index) {
                     final item = history[index];
-                    final dateStr = DateFormat('yyyy-MM-dd').format(item.date);
+                    final dateStr = DateFormat('yyyy年MM月dd日').format(item.date);
                     final isAbnormal = item.status != 'normal';
 
-                    // 计算与上一次的差值
                     String diffStr = '';
                     if (index > 0) {
                       final prevVal = history[index - 1].value;
@@ -151,7 +236,9 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                     }
 
                     return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       onTap: () {
+                        // 一键反向跳转并定位到该复查档案与大报告单栏目
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -160,26 +247,59 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                         );
                       },
                       leading: CircleAvatar(
-                        backgroundColor: isAbnormal ? Colors.red.shade100 : Colors.green.shade100,
+                        backgroundColor: isAbnormal ? Colors.red.withOpacity(0.15) : Colors.green.withOpacity(0.15),
                         child: Icon(
-                          isAbnormal ? Icons.trending_up : Icons.check,
-                          color: isAbnormal ? Colors.red : Colors.green,
+                          isAbnormal ? (item.status == 'high' ? Icons.arrow_upward : Icons.arrow_downward) : Icons.check,
+                          color: isAbnormal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
                           size: 18,
                         ),
                       ),
                       title: Row(
                         children: [
-                          Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           const SizedBox(width: 8),
-                          Text(
-                            item.hospital,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          Expanded(
+                            child: Text(
+                              item.hospital,
+                              style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
-                      subtitle: item.notes.isNotEmpty
-                          ? Text('备注: ${item.notes}', style: const TextStyle(fontSize: 11, color: Colors.amber))
-                          : null,
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Row(
+                          children: [
+                            // 醒目标注其存在的大项目/大报告单名称
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.description, size: 11, color: Colors.blueAccent),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '所属大项目: ${item.parentCategory}',
+                                    style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (item.notes.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text('· ${item.notes}', style: const TextStyle(fontSize: 11, color: Colors.amber), overflow: TextOverflow.ellipsis),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -187,9 +307,11 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                           Text(
                             '${item.valueStr} ${item.unit}',
                             style: TextStyle(
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color: isAbnormal ? Colors.red : Colors.black87,
+                              color: isAbnormal
+                                  ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                  : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
                             ),
                           ),
                           if (diffStr.isNotEmpty)
@@ -197,7 +319,8 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                               diffStr,
                               style: TextStyle(
                                 fontSize: 11,
-                                color: diffStr.contains('+') ? Colors.red : Colors.green,
+                                color: diffStr.contains('+') ? Colors.redAccent : Colors.green,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                         ],
@@ -206,6 +329,7 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                   },
                 ),
               ),
+              const SizedBox(height: 30),
             ],
           ],
         ),
@@ -213,59 +337,72 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     );
   }
 
-  Widget _buildLineChart(List<MetricHistoryPoint> points) {
-    if (points.isEmpty) return const SizedBox.shrink();
+  Widget _buildLineChart(List<MetricHistoryPoint> history, bool isDark) {
+    if (history.isEmpty) return const SizedBox.shrink();
 
     final spots = <FlSpot>[];
-    for (int i = 0; i < points.length; i++) {
-      spots.add(FlSpot(i.toDouble(), points[i].value));
+    for (int i = 0; i < history.length; i++) {
+      spots.add(FlSpot(i.toDouble(), history[i].value));
     }
 
-    double minY = points.map((p) => p.value).reduce((a, b) => a < b ? a : b);
-    double maxY = points.map((p) => p.value).reduce((a, b) => a > b ? a : b);
-    minY = (minY * 0.85).floorToDouble();
-    maxY = (maxY * 1.15).ceilToDouble();
+    final values = history.map((e) => e.value).toList();
+    double minY = values.reduce((a, b) => a < b ? a : b);
+    double maxY = values.reduce((a, b) => a > b ? a : b);
+
     if (minY == maxY) {
-      minY -= 1;
-      maxY += 1;
+      minY = minY * 0.8;
+      maxY = maxY * 1.2;
+    } else {
+      final pad = (maxY - minY) * 0.15;
+      minY = (minY - pad) > 0 ? (minY - pad) : 0;
+      maxY = maxY + pad;
     }
 
     return LineChart(
       LineChartData(
+        minX: 0,
+        maxX: (history.length - 1).toDouble() > 0 ? (history.length - 1).toDouble() : 1,
         minY: minY,
         maxY: maxY,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final idx = spot.x.toInt();
-                if (idx >= 0 && idx < points.length) {
-                  final pt = points[idx];
-                  return LineTooltipItem(
-                    '${DateFormat("MM-dd").format(pt.date)}\n${pt.value} ${pt.unit}',
-                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  );
-                }
-                return null;
-              }).toList();
-            },
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: (maxY - minY) / 4 > 0 ? (maxY - minY) / 4 : 1,
+          getDrawingHorizontalLine: (val) => FlLine(
+            color: isDark ? const Color(0xFF334155) : Colors.grey.shade200,
+            strokeWidth: 1,
           ),
         ),
-        gridData: FlGridData(show: true, drawVerticalLine: false),
         titlesData: FlTitlesData(
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 42,
+              getTitlesWidget: (val, meta) => Text(
+                val.toStringAsFixed(1),
+                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600, fontSize: 10),
+              ),
+            ),
+          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
+              reservedSize: 28,
+              interval: 1,
               getTitlesWidget: (val, meta) {
                 final idx = val.toInt();
-                if (idx >= 0 && idx < points.length) {
+                if (idx >= 0 && idx < history.length) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 6.0),
                     child: Text(
-                      DateFormat('MM/dd').format(points[idx].date),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      DateFormat('MM/dd').format(history[idx].date),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   );
                 }
@@ -279,17 +416,16 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            color: Colors.blueAccent,
+            color: const Color(0xFF38BDF8),
             barWidth: 3,
             isStrokeCapRound: true,
             dotData: FlDotData(
               show: true,
               getDotPainter: (spot, percent, barData, index) {
-                final pt = points[index];
-                final isAbnormal = pt.status != 'normal';
+                final isAb = history[index].status != 'normal';
                 return FlDotCirclePainter(
-                  radius: 5,
-                  color: isAbnormal ? Colors.red : Colors.blueAccent,
+                  radius: isAb ? 5.5 : 4,
+                  color: isAb ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
                   strokeWidth: 2,
                   strokeColor: Colors.white,
                 );
@@ -297,7 +433,14 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
             ),
             belowBarData: BarAreaData(
               show: true,
-              color: Colors.blueAccent.withOpacity(0.12),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF38BDF8).withOpacity(0.35),
+                  const Color(0xFF38BDF8).withOpacity(0.0),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
             ),
           ),
         ],

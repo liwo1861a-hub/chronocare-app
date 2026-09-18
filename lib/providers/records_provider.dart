@@ -15,6 +15,8 @@ class MetricHistoryPoint {
   final String status;
   final String notes;
   final String recordId;
+  final String parentCategory; // 所属大项目/报告单名称 (如: 血液生化全项)
+  final String diseaseName;
 
   MetricHistoryPoint({
     required this.date,
@@ -25,6 +27,8 @@ class MetricHistoryPoint {
     required this.status,
     required this.notes,
     required this.recordId,
+    required this.parentCategory,
+    this.diseaseName = '',
   });
 }
 
@@ -54,7 +58,6 @@ class RecordsProvider with ChangeNotifier {
     _records = await StorageService.instance.getRecords();
     _categoryGroups = await StorageService.instance.getCategoryGroups();
 
-    // 如果第一次使用，初始化默认慢病档案
     if (_diseases.isEmpty) {
       final defaultDisease = Disease(
         id: 'dis_default_01',
@@ -71,7 +74,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- 过滤后的记录列表 ---
   List<CheckRecord> getFilteredRecords({String sortOrder = 'date_desc'}) {
     var list = List<CheckRecord>.from(_records);
 
@@ -124,7 +126,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- 疾病管理 ---
   Disease? getDiseaseById(String id) {
     try {
       return _diseases.firstWhere((d) => d.id == id);
@@ -154,7 +155,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- 记录管理 ---
   Future<void> saveRecord(CheckRecord record) async {
     await StorageService.instance.saveRecord(record);
     final idx = _records.indexWhere((r) => r.id == record.id);
@@ -172,7 +172,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 严格按照医生开单日期/检查日期进行自动合并或归档
   Future<void> mergeOrSaveRecordByDate(CheckRecord newRecord) async {
     final newDateStr = DateFormat('yyyy-MM-dd').format(newRecord.checkDate);
 
@@ -192,14 +191,12 @@ class RecordsProvider with ChangeNotifier {
       return;
     }
 
-    // 存在同日记录，执行合并
     final Set<String> allImages = Set.from(existing.imagePaths);
     for (var img in newRecord.imagePaths) {
       if (img.isNotEmpty) allImages.add(img);
     }
     existing.imagePaths = allImages.toList();
 
-    // 合并指标
     final Map<String, CheckItem> itemMap = {};
     for (var it in existing.items) {
       itemMap[it.itemName.trim()] = it;
@@ -217,7 +214,6 @@ class RecordsProvider with ChangeNotifier {
     }
     existing.items = itemMap.values.toList();
 
-    // 合并医嘱
     if (newRecord.doctorAdvice.isNotEmpty) {
       if (existing.doctorAdvice.isEmpty) {
         existing.doctorAdvice = newRecord.doctorAdvice;
@@ -226,7 +222,6 @@ class RecordsProvider with ChangeNotifier {
       }
     }
 
-    // 医院科室信息补齐
     if (existing.hospital.isEmpty && newRecord.hospital.isNotEmpty) {
       existing.hospital = newRecord.hospital;
     }
@@ -240,7 +235,6 @@ class RecordsProvider with ChangeNotifier {
     await saveRecord(existing);
   }
 
-  /// 一键合并档案内的两个检查栏目（将 fromCategory 的所有指标合并入 toCategory）
   Future<void> mergeCategoriesInRecord(String recordId, String fromCategory, String toCategory) async {
     final idx = _records.indexWhere((r) => r.id == recordId);
     if (idx < 0) return;
@@ -255,7 +249,6 @@ class RecordsProvider with ChangeNotifier {
     await saveRecord(record);
   }
 
-  // --- 分类组与整合管理 ---
   Future<void> saveCategoryGroup(CategoryGroup group) async {
     await StorageService.instance.saveCategoryGroup(group);
     final idx = _categoryGroups.indexWhere((g) => g.id == group.id);
@@ -291,6 +284,7 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 提取所有指标名称（无论正常、偏高、偏低还是自定义，100% 全量包含）
   List<String> getAllItemNames() {
     final Set<String> names = {};
     for (var r in _records) {
@@ -303,23 +297,40 @@ class RecordsProvider with ChangeNotifier {
     return names.toList()..sort();
   }
 
+  /// 关键词模糊搜索指标名称
+  List<String> searchItemNames(String query) {
+    if (query.trim().isEmpty) return getAllItemNames();
+    final q = query.trim().toLowerCase();
+    return getAllItemNames().where((name) => name.toLowerCase().contains(q)).toList();
+  }
+
+  /// 获取指定指标的历史走势数据（包含正常指标与异常指标，指向所在大项目）
   List<MetricHistoryPoint> getMetricHistory(String itemName) {
     final List<MetricHistoryPoint> points = [];
     final target = itemName.trim().toLowerCase();
 
     for (var r in _records) {
+      final dis = getDiseaseById(r.diseaseId);
       for (var it in r.items) {
         if (it.itemName.trim().toLowerCase() == target) {
-          if (it.numericValue != null) {
+          double? val = it.numericValue;
+          if (val == null) {
+            final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(it.value);
+            if (match != null) val = double.tryParse(match.group(0)!);
+          }
+
+          if (val != null) {
             points.add(MetricHistoryPoint(
               date: r.checkDate,
-              hospital: r.hospital,
-              value: it.numericValue!,
+              hospital: r.hospital.isNotEmpty ? r.hospital : '未注明医院',
+              value: val,
               valueStr: it.value,
               unit: it.unit,
               status: it.status,
               notes: it.notes,
               recordId: r.id,
+              parentCategory: it.category.isNotEmpty ? it.category : (r.category.isNotEmpty ? r.category : '常规化验单'),
+              diseaseName: dis?.name ?? '',
             ));
           }
         }

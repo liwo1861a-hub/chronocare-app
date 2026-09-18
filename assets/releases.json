@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.7",
-    "name": "ChronoCare v1.0.7 单据级智能归并与一键栏目合并版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.7\n- 📑 单据级统一归类（杜绝过细碎片化）：整张化验单的所有检测指标全部完整保留在当前报告单大栏目下，极速查阅\n- 🔗 支持一键合并栏目：可在详情页随时将碎片化栏目合并入目标大单据栏目中\n- 🖼️ 沉浸式全屏画廊浏览器，彻底消除黑边与遮挡\n- 🔄 左右滑动双向切图与栏目切换联动\n- 🔒 永久固化 Release 签名支持无缝就地更新",
-    "published_at": "2025-05-18T18:00:00Z",
+    "tag_name": "v1.0.8",
+    "name": "ChronoCare v1.0.8 关键词指标搜索与大项目反向定位走势版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.0.8\n- 🔍 关键词即时搜索指标：快速输入查找任意指标并即刻呈现历史走势图\n- 📈 正常指标全量入库制图：无论指标是否异常均可生成完整走势折线图与前后变动量分析\n- 🔗 反向定位并跳转大报告单：走势列表清晰标明该指标所属的大项目，点击直接跳转当天病历与对应大栏目\n- 📑 单据级报告单智能聚合与一键栏目合并\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-18T19:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.7-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.7/app-release.apk"
+        "name": "chronocare-v1.0.8-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.8/app-release.apk"
       }
     ]
   }
