@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import '../providers/records_provider.dart';
 import '../providers/settings_provider.dart';
 import 'timeline_tab.dart';
-import 'diseases_tab.dart';
-import 'categories_tab.dart';
 import 'metrics_trend_tab.dart';
+import 'medications_tab.dart';
+import 'questions_tab.dart';
+import 'diseases_tab.dart';
 import 'record_edit_screen.dart';
 import 'batch_import_screen.dart';
 import 'settings_screen.dart';
@@ -24,16 +25,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _tabs = const [
     TimelineTab(),
-    DiseasesTab(),
-    CategoriesTab(),
     MetricsTrendTab(),
+    MedicationsTab(),
+    QuestionsTab(),
+    DiseasesTab(),
   ];
 
   final List<String> _tabTitles = const [
     '复查时间轴',
-    '慢病病程档案',
-    '检查项目分类',
     '核心指标趋势',
+    '慢病用药记录',
+    '复查提问备忘',
+    '慢病病程档案',
   ];
 
   @override
@@ -104,20 +107,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              PopupMenuItem(
-                value: 'abnormal_first',
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 16, color: settings.defaultRecordSort == 'abnormal_first' ? Colors.blue : Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text('异常指标优先'),
-                  ],
-                ),
-              ),
             ],
           ),
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: '系统与同步设置',
             onPressed: () {
               Navigator.push(
                 context,
@@ -127,10 +121,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _tabs[_currentIndex],
+      body: recordsProv.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _tabs[_currentIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.timeline_outlined),
@@ -138,19 +138,24 @@ class _HomeScreenState extends State<HomeScreen> {
             label: '时间轴',
           ),
           NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: '病程档案',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.category_outlined),
-            selectedIcon: Icon(Icons.category),
-            label: '检查分类',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.trending_up_outlined),
-            selectedIcon: Icon(Icons.trending_up),
+            icon: Icon(Icons.show_chart_outlined),
+            selectedIcon: Icon(Icons.show_chart),
             label: '指标走势',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.medication_outlined),
+            selectedIcon: Icon(Icons.medication),
+            label: '药物记录',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.live_help_outlined),
+            selectedIcon: Icon(Icons.live_help),
+            label: '提问备忘',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.folder_shared_outlined),
+            selectedIcon: Icon(Icons.folder_shared),
+            label: '慢病档案',
           ),
         ],
       ),
@@ -158,29 +163,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                FloatingActionButton.extended(
-                  heroTag: 'batch_scan',
-                  backgroundColor: Colors.purple.shade600,
-                  foregroundColor: Colors.white,
-                  icon: const Icon(Icons.auto_awesome),
-                  label: const Text('批量智能扫单'),
+                FloatingActionButton.small(
+                  heroTag: 'batch_ocr_btn',
+                  tooltip: '批量图谱识别导入',
+                  backgroundColor: const Color(0xFF0284C7),
                   onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const BatchImportScreen()),
                     );
                   },
+                  child: const Icon(Icons.document_scanner, color: Colors.white),
                 ),
                 const SizedBox(height: 10),
                 FloatingActionButton(
-                  heroTag: 'add_single',
-                  child: const Icon(Icons.add),
+                  heroTag: 'add_record_btn',
+                  tooltip: '新建复查单',
                   onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const RecordEditScreen()),
                     );
                   },
+                  child: const Icon(Icons.add),
                 ),
               ],
             )

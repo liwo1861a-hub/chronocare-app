@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.0.9",
-    "name": "ChronoCare v1.0.9 定性/文本型项目时序比对与智能转归演变版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.0.9\n- 📊 定性/非数值型项目全量支持：尿蛋白定性、乙肝抗体、病理超声描述等 100% 纳入长期时序对比\n- 🔄 智能转归判定：自动对比历次结果，智能标识【转阴 🟢】、【转阳 🔴】、【好转 🔻】、【加重 🔺】\n- 📈 生成时序状态阶梯图与图文对照演变轴\n- 🔍 关键词搜索指标与反向直达所属大报告单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-18T20:00:00Z",
+    "tag_name": "v1.1.0",
+    "name": "ChronoCare v1.1.0 药物记录与复查提问备忘对比大类版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.1.0\n- 💊 新增大类【慢病药物记录】：支持指向调药/复查日期，智能与上次方案对比剂量增减\n- 📝 新增大类【复查提问备忘】：独立问题管理、勾选确定是否已提问、记录医生回复、并与上次复查提问历史对比\n- 📊 定性/文本型项目时序对比与智能转归判定\n- 🔍 关键词搜索指标与反向直达所属大报告单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-18T21:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.0.9-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.0.9/app-release.apk"
+        "name": "chronocare-v1.1.0-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.0/app-release.apk"
       }
     ]
   }

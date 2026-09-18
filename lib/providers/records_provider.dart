@@ -4,21 +4,23 @@ import '../models/disease.dart';
 import '../models/record.dart';
 import '../models/check_item.dart';
 import '../models/category_group.dart';
+import '../models/medication_plan.dart';
+import '../models/consultation_question.dart';
 import '../services/storage_service.dart';
 
 class MetricHistoryPoint {
   final DateTime date;
   final String hospital;
-  final double value; // 数值型或定性量化值 (阴性=0, ±=0.5, +=1, 2+=2, 3+=3, 阳性=1)
-  final String valueStr; // 原始文本结果 (如 "阴性", "2+", "未见异常", "轻度改变")
+  final double value;
+  final String valueStr;
   final String unit;
-  final String status; // 'normal', 'high', 'low', 'abnormal'
+  final String status;
   final String notes;
   final String recordId;
-  final String parentCategory; // 所属大项目/报告单名称 (如: 血液生化全项, 尿液常规)
+  final String parentCategory;
   final String diseaseName;
-  final bool isQualitative; // 是否为定性/文本型项目
-  final String qualitativeChange; // 与上次比对判定 (如: "转阴 🟢", "转阳 🔴", "好转 🔻", "持平 ⚪")
+  final bool isQualitative;
+  final String qualitativeChange;
 
   MetricHistoryPoint({
     required this.date,
@@ -36,10 +38,36 @@ class MetricHistoryPoint {
   });
 }
 
+class MedicationComparisonGroup {
+  final DateTime date;
+  final List<MedicationPlanWithDiff> items;
+  MedicationComparisonGroup({required this.date, required this.items});
+}
+
+class MedicationPlanWithDiff {
+  final MedicationPlan plan;
+  final String diffTag; // 如: "加量 🔺 (前次: 0.25g)", "减量 🔻 (前次: 1.0g)", "新开 🟢", "维持 ⚪"
+  final MedicationPlan? previousPlan;
+  MedicationPlanWithDiff({required this.plan, required this.diffTag, this.previousPlan});
+}
+
+class QuestionsByDateGroup {
+  final DateTime date;
+  final List<ConsultationQuestion> questions;
+  final List<ConsultationQuestion> previousDateQuestions; // 上一次就诊日期的提问与解答
+  QuestionsByDateGroup({
+    required this.date,
+    required this.questions,
+    this.previousDateQuestions = const [],
+  });
+}
+
 class RecordsProvider with ChangeNotifier {
   List<Disease> _diseases = [];
   List<CheckRecord> _records = [];
   List<CategoryGroup> _categoryGroups = [];
+  List<MedicationPlan> _medicationPlans = [];
+  List<ConsultationQuestion> _consultationQuestions = [];
   bool _isLoading = true;
 
   String _searchQuery = '';
@@ -49,6 +77,8 @@ class RecordsProvider with ChangeNotifier {
   List<Disease> get diseases => _diseases;
   List<CheckRecord> get records => _records;
   List<CategoryGroup> get categoryGroups => _categoryGroups;
+  List<MedicationPlan> get medicationPlans => _medicationPlans;
+  List<ConsultationQuestion> get consultationQuestions => _consultationQuestions;
   bool get isLoading => _isLoading;
   String get searchQuery => _searchQuery;
   String get selectedDiseaseId => _selectedDiseaseId;
@@ -61,6 +91,8 @@ class RecordsProvider with ChangeNotifier {
     _diseases = await StorageService.instance.getDiseases();
     _records = await StorageService.instance.getRecords();
     _categoryGroups = await StorageService.instance.getCategoryGroups();
+    _medicationPlans = await StorageService.instance.getMedicationPlans();
+    _consultationQuestions = await StorageService.instance.getConsultationQuestions();
 
     if (_diseases.isEmpty) {
       final defaultDisease = Disease(
@@ -156,6 +188,8 @@ class RecordsProvider with ChangeNotifier {
   Future<void> deleteDisease(String id) async {
     await StorageService.instance.deleteDisease(id);
     _diseases.removeWhere((d) => d.id == id);
+    _medicationPlans.removeWhere((m) => m.diseaseId == id);
+    _consultationQuestions.removeWhere((q) => q.diseaseId == id);
     notifyListeners();
   }
 
@@ -306,7 +340,6 @@ class RecordsProvider with ChangeNotifier {
     return getAllItemNames().where((name) => name.toLowerCase().contains(q)).toList();
   }
 
-  /// 获取指定指标的历史走势数据（包含数值型与定性/文字型，100% 支持时序比对）
   List<MetricHistoryPoint> getMetricHistory(String itemName) {
     final List<MetricHistoryPoint> rawPoints = [];
     final target = itemName.trim().toLowerCase();
@@ -318,7 +351,6 @@ class RecordsProvider with ChangeNotifier {
           double? val = it.numericValue;
           bool isQualitative = false;
 
-          // 尝试数值解析
           if (val == null) {
             final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(it.value);
             if (match != null) {
@@ -326,7 +358,6 @@ class RecordsProvider with ChangeNotifier {
             }
           }
 
-          // 定性/阴阳性/加号/文字结果量化映射
           if (val == null) {
             isQualitative = true;
             final vStr = it.value.trim().toLowerCase();
@@ -343,7 +374,7 @@ class RecordsProvider with ChangeNotifier {
             } else if (vStr.contains('1+') || vStr.contains('+') || vStr.contains('阳') || vStr.contains('异常')) {
               val = 1.0;
             } else {
-              val = 0.0; // 纯文本描述赋默认基准
+              val = 0.0;
             }
           }
 
@@ -366,7 +397,6 @@ class RecordsProvider with ChangeNotifier {
 
     rawPoints.sort((a, b) => a.date.compareTo(b.date));
 
-    // 计算相邻复查的定性转归判定 (如: 转阴, 转阳, 加重, 好转, 稳定)
     final List<MetricHistoryPoint> finalPoints = [];
     for (int i = 0; i < rawPoints.length; i++) {
       final cur = rawPoints[i];
@@ -401,5 +431,168 @@ class RecordsProvider with ChangeNotifier {
     }
 
     return finalPoints;
+  }
+
+  // ==========================================
+  // --- 💊 药物记录与方案前后对比管理 ---
+  // ==========================================
+
+  Future<void> saveMedicationPlan(MedicationPlan plan) async {
+    await StorageService.instance.saveMedicationPlan(plan);
+    final idx = _medicationPlans.indexWhere((m) => m.id == plan.id);
+    if (idx >= 0) {
+      _medicationPlans[idx] = plan;
+    } else {
+      _medicationPlans.add(plan);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteMedicationPlan(String id) async {
+    await StorageService.instance.deleteMedicationPlan(id);
+    _medicationPlans.removeWhere((m) => m.id == id);
+    notifyListeners();
+  }
+
+  /// 获取按日期分组且携带与上一次日期自动比对的用药记录
+  List<MedicationComparisonGroup> getMedicationComparisonGroups({String diseaseId = ''}) {
+    var list = List<MedicationPlan>.from(_medicationPlans);
+    if (diseaseId.isNotEmpty) {
+      list = list.where((m) => m.diseaseId == diseaseId).toList();
+    }
+
+    // 按日期升序排序
+    list.sort((a, b) => a.date.compareTo(b.date));
+
+    // 按日期分组
+    final Map<String, List<MedicationPlan>> groupedByDate = {};
+    for (var m in list) {
+      final dateKey = DateFormat('yyyy-MM-dd').format(m.date);
+      groupedByDate.putIfAbsent(dateKey, () => []).add(m);
+    }
+
+    final sortedDateKeys = groupedByDate.keys.toList()..sort();
+    final List<MedicationComparisonGroup> groups = [];
+
+    for (int i = 0; i < sortedDateKeys.length; i++) {
+      final dateKey = sortedDateKeys[i];
+      final currentPlans = groupedByDate[dateKey]!;
+      final currentDateTime = currentPlans.first.date;
+
+      final List<MedicationPlanWithDiff> itemsWithDiff = [];
+
+      // 寻找上一个日期的用药方案
+      List<MedicationPlan> prevPlans = [];
+      if (i > 0) {
+        final prevDateKey = sortedDateKeys[i - 1];
+        prevPlans = groupedByDate[prevDateKey]!;
+      }
+
+      for (var plan in currentPlans) {
+        // 在前一次方案中寻找同名药物
+        final prevMatch = prevPlans.where(
+          (p) => p.medicineName.trim().toLowerCase() == plan.medicineName.trim().toLowerCase(),
+        ).toList();
+
+        String diffTag = '维持原方案 ⚪';
+        MedicationPlan? prevPlan;
+
+        if (prevMatch.isEmpty) {
+          diffTag = '本次新开药物 🟢';
+        } else {
+          prevPlan = prevMatch.first;
+          if (plan.dosage != prevPlan.dosage || plan.frequency != prevPlan.frequency) {
+            diffTag = '剂量/频次调整 🔄 (前次: ${prevPlan.dosage} ${prevPlan.frequency})';
+          } else if (plan.changeType == 'stop' || plan.status == 'stopped') {
+            diffTag = '已停用 🔴';
+          } else {
+            diffTag = '遵医嘱维持 ⚪';
+          }
+        }
+
+        itemsWithDiff.add(MedicationPlanWithDiff(
+          plan: plan,
+          diffTag: diffTag,
+          previousPlan: prevPlan,
+        ));
+      }
+
+      groups.add(MedicationComparisonGroup(
+        date: currentDateTime,
+        items: itemsWithDiff,
+      ));
+    }
+
+    // 默认展示按日期倒序（最新在最前）
+    return groups.reversed.toList();
+  }
+
+  // ==========================================
+  // --- 📝 复查提问备忘录与历史解答前后对比 ---
+  // ==========================================
+
+  Future<void> saveConsultationQuestion(ConsultationQuestion q) async {
+    await StorageService.instance.saveConsultationQuestion(q);
+    final idx = _consultationQuestions.indexWhere((item) => item.id == q.id);
+    if (idx >= 0) {
+      _consultationQuestions[idx] = q;
+    } else {
+      _consultationQuestions.add(q);
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleQuestionAskedStatus(String questionId) async {
+    final idx = _consultationQuestions.indexWhere((q) => q.id == questionId);
+    if (idx >= 0) {
+      final cur = _consultationQuestions[idx];
+      cur.isAsked = !cur.isAsked;
+      await saveConsultationQuestion(cur);
+    }
+  }
+
+  Future<void> deleteConsultationQuestion(String id) async {
+    await StorageService.instance.deleteConsultationQuestion(id);
+    _consultationQuestions.removeWhere((q) => q.id == id);
+    notifyListeners();
+  }
+
+  /// 获取按复查就诊日期分组且携带上一次复查提问与医生解答对比的列表
+  List<QuestionsByDateGroup> getQuestionsGroupedByDate({String diseaseId = ''}) {
+    var list = List<ConsultationQuestion>.from(_consultationQuestions);
+    if (diseaseId.isNotEmpty) {
+      list = list.where((q) => q.diseaseId == diseaseId).toList();
+    }
+
+    list.sort((a, b) => a.targetDate.compareTo(b.targetDate));
+
+    final Map<String, List<ConsultationQuestion>> grouped = {};
+    for (var q in list) {
+      final dateKey = DateFormat('yyyy-MM-dd').format(q.targetDate);
+      grouped.putIfAbsent(dateKey, () => []).add(q);
+    }
+
+    final sortedDateKeys = grouped.keys.toList()..sort();
+    final List<QuestionsByDateGroup> groups = [];
+
+    for (int i = 0; i < sortedDateKeys.length; i++) {
+      final dateKey = sortedDateKeys[i];
+      final currentQuestions = grouped[dateKey]!;
+      final currentDateTime = currentQuestions.first.targetDate;
+
+      List<ConsultationQuestion> prevQuestions = [];
+      if (i > 0) {
+        final prevDateKey = sortedDateKeys[i - 1];
+        prevQuestions = grouped[prevDateKey]!;
+      }
+
+      groups.add(QuestionsByDateGroup(
+        date: currentDateTime,
+        questions: currentQuestions,
+        previousDateQuestions: prevQuestions,
+      ));
+    }
+
+    return groups.reversed.toList();
   }
 }

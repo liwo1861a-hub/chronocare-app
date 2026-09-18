@@ -8,6 +8,8 @@ import '../models/disease.dart';
 import '../models/record.dart';
 import '../models/app_settings.dart';
 import '../models/category_group.dart';
+import '../models/medication_plan.dart';
+import '../models/consultation_question.dart';
 
 class StorageService {
   static final StorageService instance = StorageService._();
@@ -23,7 +25,7 @@ class StorageService {
 
     _db = await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE diseases (
@@ -69,6 +71,35 @@ class StorageService {
             notes TEXT
           )
         ''');
+
+        await db.execute('''
+          CREATE TABLE medication_plans (
+            id TEXT PRIMARY KEY,
+            diseaseId TEXT,
+            date TEXT,
+            medicineName TEXT NOT NULL,
+            dosage TEXT,
+            frequency TEXT,
+            changeType TEXT,
+            reason TEXT,
+            status TEXT,
+            notes TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE consultation_questions (
+            id TEXT PRIMARY KEY,
+            diseaseId TEXT,
+            targetDate TEXT,
+            question TEXT NOT NULL,
+            detail TEXT,
+            isAsked INTEGER,
+            doctorAnswer TEXT,
+            category TEXT,
+            createdAt TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -80,6 +111,36 @@ class StorageService {
               colorHex TEXT,
               matchedItemNames TEXT,
               notes TEXT
+            )
+          ''');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS medication_plans (
+              id TEXT PRIMARY KEY,
+              diseaseId TEXT,
+              date TEXT,
+              medicineName TEXT NOT NULL,
+              dosage TEXT,
+              frequency TEXT,
+              changeType TEXT,
+              reason TEXT,
+              status TEXT,
+              notes TEXT
+            )
+          ''');
+
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS consultation_questions (
+              id TEXT PRIMARY KEY,
+              diseaseId TEXT,
+              targetDate TEXT,
+              question TEXT NOT NULL,
+              detail TEXT,
+              isAsked INTEGER,
+              doctorAnswer TEXT,
+              category TEXT,
+              createdAt TEXT
             )
           ''');
         }
@@ -104,6 +165,8 @@ class StorageService {
   Future<void> deleteDisease(String id) async {
     await _db!.delete('diseases', where: 'id = ?', whereArgs: [id]);
     await _db!.delete('records', where: 'diseaseId = ?', whereArgs: [id]);
+    await _db!.delete('medication_plans', where: 'diseaseId = ?', whereArgs: [id]);
+    await _db!.delete('consultation_questions', where: 'diseaseId = ?', whereArgs: [id]);
   }
 
   // --- 复查记录操作 ---
@@ -142,6 +205,42 @@ class StorageService {
     await _db!.delete('category_groups', where: 'id = ?', whereArgs: [id]);
   }
 
+  // --- 药物记录与方案操作 ---
+  Future<List<MedicationPlan>> getMedicationPlans() async {
+    final res = await _db!.query('medication_plans', orderBy: 'date DESC');
+    return res.map((m) => MedicationPlan.fromMap(m)).toList();
+  }
+
+  Future<void> saveMedicationPlan(MedicationPlan plan) async {
+    await _db!.insert(
+      'medication_plans',
+      plan.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteMedicationPlan(String id) async {
+    await _db!.delete('medication_plans', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- 复查提问备忘录操作 ---
+  Future<List<ConsultationQuestion>> getConsultationQuestions() async {
+    final res = await _db!.query('consultation_questions', orderBy: 'targetDate DESC, createdAt DESC');
+    return res.map((m) => ConsultationQuestion.fromMap(m)).toList();
+  }
+
+  Future<void> saveConsultationQuestion(ConsultationQuestion question) async {
+    await _db!.insert(
+      'consultation_questions',
+      question.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteConsultationQuestion(String id) async {
+    await _db!.delete('consultation_questions', where: 'id = ?', whereArgs: [id]);
+  }
+
   // --- 设置操作 ---
   Future<AppSettings> getSettings() async {
     if (_prefs == null) await init();
@@ -167,15 +266,19 @@ class StorageService {
     final diseases = await getDiseases();
     final records = await getRecords();
     final groups = await getCategoryGroups();
+    final meds = await getMedicationPlans();
+    final questions = await getConsultationQuestions();
     final settings = await getSettings();
 
     return {
       'app': 'ChronoCare',
-      'version': '1.0.1',
+      'version': '1.1.0',
       'exported_at': DateTime.now().toIso8601String(),
       'diseases': diseases.map((d) => d.toMap()).toList(),
       'records': records.map((r) => r.toMap()).toList(),
       'category_groups': groups.map((g) => g.toMap()).toList(),
+      'medication_plans': meds.map((m) => m.toMap()).toList(),
+      'consultation_questions': questions.map((q) => q.toMap()).toList(),
       'settings': settings.toMap(),
     };
   }
@@ -195,6 +298,16 @@ class StorageService {
     if (data['category_groups'] != null && data['category_groups'] is List) {
       for (var gMap in data['category_groups']) {
         await saveCategoryGroup(CategoryGroup.fromMap(Map<String, dynamic>.from(gMap)));
+      }
+    }
+    if (data['medication_plans'] != null && data['medication_plans'] is List) {
+      for (var mMap in data['medication_plans']) {
+        await saveMedicationPlan(MedicationPlan.fromMap(Map<String, dynamic>.from(mMap)));
+      }
+    }
+    if (data['consultation_questions'] != null && data['consultation_questions'] is List) {
+      for (var qMap in data['consultation_questions']) {
+        await saveConsultationQuestion(ConsultationQuestion.fromMap(Map<String, dynamic>.from(qMap)));
       }
     }
     if (data['settings'] != null && data['settings'] is Map) {
