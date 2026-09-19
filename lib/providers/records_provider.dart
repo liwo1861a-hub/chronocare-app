@@ -46,15 +46,67 @@ class MedicationComparisonGroup {
 
 class MedicationPlanWithDiff {
   final MedicationPlan plan;
-  final String diffTag; // 如: "加量 🔺 (前次: 0.25g)", "减量 🔻 (前次: 1.0g)", "新开 🟢", "维持 ⚪"
+  final String diffTag;
   final MedicationPlan? previousPlan;
   MedicationPlanWithDiff({required this.plan, required this.diffTag, this.previousPlan});
+}
+
+/// 同一种药物的聚合档案与完整剂量演变走势
+class MedicationDrugTimeline {
+  final String medicineName;
+  final String diseaseId;
+  final String diseaseName;
+  final String currentStatus; // active, stopped
+  final String latestDosage;
+  final String latestFrequency;
+  final DateTime latestDate;
+  final DateTime firstDate;
+  final List<MedicationAdjustmentPoint> historyPoints;
+
+  MedicationDrugTimeline({
+    required this.medicineName,
+    required this.diseaseId,
+    required this.diseaseName,
+    required this.currentStatus,
+    required this.latestDosage,
+    required this.latestFrequency,
+    required this.latestDate,
+    required this.firstDate,
+    required this.historyPoints,
+  });
+}
+
+/// 单次剂量调整点 (用于绘制走势图与时间线对比)
+class MedicationAdjustmentPoint {
+  final String id;
+  final DateTime date;
+  final String dosageStr;
+  final double numericDosage; // 解析出的剂量数字 (如 0.5)
+  final String unit; // 解析出的剂量单位 (如 g, mg, 片, μg)
+  final String frequency;
+  final String changeType; // new, increase, decrease, stop, maintain, switch
+  final String reason;
+  final String notes;
+  final String diffFromPrevious; // 如 "+0.25g (加量 🔺)", "-1片 (减量 🔻)", "首次开具 🟢"
+
+  MedicationAdjustmentPoint({
+    required this.id,
+    required this.date,
+    required this.dosageStr,
+    required this.numericDosage,
+    required this.unit,
+    required this.frequency,
+    required this.changeType,
+    required this.reason,
+    required this.notes,
+    required this.diffFromPrevious,
+  });
 }
 
 class QuestionsByDateGroup {
   final DateTime date;
   final List<ConsultationQuestion> questions;
-  final List<ConsultationQuestion> previousDateQuestions; // 上一次就诊日期的提问与解答
+  final List<ConsultationQuestion> previousDateQuestions;
   QuestionsByDateGroup({
     required this.date,
     required this.questions,
@@ -433,9 +485,9 @@ class RecordsProvider with ChangeNotifier {
     return finalPoints;
   }
 
-  // ==========================================
-  // --- 💊 药物记录与方案前后对比管理 ---
-  // ==========================================
+  // =========================================================================
+  // --- 💊 慢病药物记录：同种药物聚合档案与剂量调整走势图 ---
+  // =========================================================================
 
   Future<void> saveMedicationPlan(MedicationPlan plan) async {
     await StorageService.instance.saveMedicationPlan(plan);
@@ -454,17 +506,125 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 获取按日期分组且携带与上一次日期自动比对的用药记录
+  /// 提取同一种药物的所有调药记录，聚合成独立档案并生成剂量时序走势
+  List<MedicationDrugTimeline> getAggregatedMedicationTimelines({
+    String searchQuery = '',
+    String diseaseId = '',
+  }) {
+    var list = List<MedicationPlan>.from(_medicationPlans);
+    if (diseaseId.isNotEmpty) {
+      list = list.where((m) => m.diseaseId == diseaseId).toList();
+    }
+
+    // 按药品名称分组
+    final Map<String, List<MedicationPlan>> groupedByName = {};
+    for (var m in list) {
+      final name = m.medicineName.trim();
+      if (name.isEmpty) continue;
+      groupedByName.putIfAbsent(name, () => []).add(m);
+    }
+
+    final List<MedicationDrugTimeline> timelines = [];
+
+    for (var entry in groupedByName.entries) {
+      final medName = entry.key;
+      final rawPlans = entry.value;
+
+      // 关键词搜索过滤
+      if (searchQuery.isNotEmpty) {
+        final q = searchQuery.toLowerCase();
+        if (!medName.toLowerCase().contains(q) &&
+            !rawPlans.any((p) => p.reason.toLowerCase().contains(q) || p.notes.toLowerCase().contains(q))) {
+          continue;
+        }
+      }
+
+      // 按日期升序排列，以便计算剂量前后变化
+      rawPlans.sort((a, b) => a.date.compareTo(b.date));
+
+      final List<MedicationAdjustmentPoint> points = [];
+      double prevNumDosage = 0.0;
+
+      for (int i = 0; i < rawPlans.length; i++) {
+        final cur = rawPlans[i];
+        final parsed = _parseDosageNumeric(cur.dosage);
+
+        String diff = '维持方案 ⚪';
+        if (i == 0) {
+          diff = '初始用药方案 🟢';
+        } else {
+          final prev = rawPlans[i - 1];
+          if (cur.status == 'stopped' || cur.changeType == 'stop') {
+            diff = '遵医嘱停药 🔴';
+          } else if (parsed.value > prevNumDosage && prevNumDosage > 0) {
+            final delta = parsed.value - prevNumDosage;
+            diff = '加量 +${delta.toStringAsFixed(2)}${parsed.unit} 🔺';
+          } else if (parsed.value < prevNumDosage && prevNumDosage > 0) {
+            final delta = prevNumDosage - parsed.value;
+            diff = '减量 -${delta.toStringAsFixed(2)}${parsed.unit} 🔻';
+          } else if (cur.dosage != prev.dosage || cur.frequency != prev.frequency) {
+            diff = '频次/剂型调整 🔄';
+          }
+        }
+
+        prevNumDosage = parsed.value;
+
+        points.add(MedicationAdjustmentPoint(
+          id: cur.id,
+          date: cur.date,
+          dosageStr: cur.dosage.isNotEmpty ? cur.dosage : '未注明',
+          numericDosage: parsed.value,
+          unit: parsed.unit,
+          frequency: cur.frequency.isNotEmpty ? cur.frequency : '未注明',
+          changeType: cur.changeType,
+          reason: cur.reason,
+          notes: cur.notes,
+          diffFromPrevious: diff,
+        ));
+      }
+
+      final latest = rawPlans.last;
+      final dis = getDiseaseById(latest.diseaseId);
+
+      timelines.add(MedicationDrugTimeline(
+        medicineName: medName,
+        diseaseId: latest.diseaseId,
+        diseaseName: dis?.name ?? '',
+        currentStatus: latest.status,
+        latestDosage: latest.dosage,
+        latestFrequency: latest.frequency,
+        latestDate: latest.date,
+        firstDate: rawPlans.first.date,
+        historyPoints: points, // 按时间正序排列
+      ));
+    }
+
+    // 默认按最新调药日期倒序排列（最近调整的药物排在最前）
+    timelines.sort((a, b) => b.latestDate.compareTo(a.latestDate));
+    return timelines;
+  }
+
+  /// 智能解析剂量字符串中的数值与单位 (如 "0.5g", "500mg", "1片", "50μg")
+  _ParsedDosage _parseDosageNumeric(String dosage) {
+    if (dosage.isEmpty) return _ParsedDosage(1.0, '');
+    final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(dosage);
+    if (match != null) {
+      final numVal = double.tryParse(match.group(0)!) ?? 1.0;
+      final unit = dosage.replaceAll(match.group(0)!, '').replaceAll('/', '').replaceAll('次', '').trim();
+      return _ParsedDosage(numVal, unit.isNotEmpty ? unit : '剂量');
+    }
+    return _ParsedDosage(1.0, '剂量');
+  }
+
+  /// 获取按日期分组且携带与上一次日期自动比对的用药记录 (供日期流水视图使用)
   List<MedicationComparisonGroup> getMedicationComparisonGroups({String diseaseId = ''}) {
     var list = List<MedicationPlan>.from(_medicationPlans);
     if (diseaseId.isNotEmpty) {
       list = list.where((m) => m.diseaseId == diseaseId).toList();
     }
 
-    // 按日期升序排序
     list.sort((a, b) => a.date.compareTo(b.date));
 
-    // 按日期分组
     final Map<String, List<MedicationPlan>> groupedByDate = {};
     for (var m in list) {
       final dateKey = DateFormat('yyyy-MM-dd').format(m.date);
@@ -481,7 +641,6 @@ class RecordsProvider with ChangeNotifier {
 
       final List<MedicationPlanWithDiff> itemsWithDiff = [];
 
-      // 寻找上一个日期的用药方案
       List<MedicationPlan> prevPlans = [];
       if (i > 0) {
         final prevDateKey = sortedDateKeys[i - 1];
@@ -489,7 +648,6 @@ class RecordsProvider with ChangeNotifier {
       }
 
       for (var plan in currentPlans) {
-        // 在前一次方案中寻找同名药物
         final prevMatch = prevPlans.where(
           (p) => p.medicineName.trim().toLowerCase() == plan.medicineName.trim().toLowerCase(),
         ).toList();
@@ -523,13 +681,12 @@ class RecordsProvider with ChangeNotifier {
       ));
     }
 
-    // 默认展示按日期倒序（最新在最前）
     return groups.reversed.toList();
   }
 
-  // ==========================================
+  // =========================================================================
   // --- 📝 复查提问备忘录与历史解答前后对比 ---
-  // ==========================================
+  // =========================================================================
 
   Future<void> saveConsultationQuestion(ConsultationQuestion q) async {
     await StorageService.instance.saveConsultationQuestion(q);
@@ -557,7 +714,6 @@ class RecordsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 获取按复查就诊日期分组且携带上一次复查提问与医生解答对比的列表
   List<QuestionsByDateGroup> getQuestionsGroupedByDate({String diseaseId = ''}) {
     var list = List<ConsultationQuestion>.from(_consultationQuestions);
     if (diseaseId.isNotEmpty) {
@@ -595,4 +751,10 @@ class RecordsProvider with ChangeNotifier {
 
     return groups.reversed.toList();
   }
+}
+
+class _ParsedDosage {
+  final double value;
+  final String unit;
+  _ParsedDosage(this.value, this.unit);
 }
