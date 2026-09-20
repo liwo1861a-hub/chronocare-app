@@ -16,6 +16,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
   String _selectedDiseaseFilter = '';
+  bool _isFabExpanded = true; // 控制新增按钮是否展开或侧边紧凑折叠
 
   @override
   void dispose() {
@@ -33,82 +34,135 @@ class _MedicationsTabState extends State<MedicationsTab> {
     );
 
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // 1. 顶部药品搜索栏
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
-            child: Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                child: TextField(
-                  controller: _searchCtrl,
-                  decoration: InputDecoration(
-                    hintText: '搜索药品名称、调药原因、注意事项...',
-                    hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
-                    prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
+          Column(
+            children: [
+              // 1. 顶部药品搜索栏
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+                child: Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: '搜索药品名称、调药原因、注意事项...',
+                        hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
+                        prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val.trim());
+                      },
+                    ),
                   ),
-                  onChanged: (val) {
-                    setState(() => _searchQuery = val.trim());
-                  },
                 ),
               ),
-            ),
+
+              // 2. 核心内容区：同一种药物整合聚合列表
+              Expanded(
+                child: drugTimelines.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.medication_outlined, size: 68, color: Colors.grey.shade400),
+                            const SizedBox(height: 14),
+                            const Text('暂无慢病用药记录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            const Text('录入药物后，系统将自动汇总同种药品的全部剂量变动并绘制走势图', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            const SizedBox(height: 20),
+                            ElevatedButton.icon(
+                              onPressed: () => _showEditMedicationDialog(context, null, null),
+                              icon: const Icon(Icons.add),
+                              label: const Text('录入第一种慢病用药'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 80), // 底部预留空间
+                        itemCount: drugTimelines.length,
+                        itemBuilder: (context, index) {
+                          final drug = drugTimelines[index];
+                          return _buildDrugAggregateCard(context, drug, isDark, prov);
+                        },
+                      ),
+              ),
+            ],
           ),
 
-          // 2. 核心内容区：同一种药物整合聚合列表
-          Expanded(
-            child: drugTimelines.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.medication_outlined, size: 68, color: Colors.grey.shade400),
-                        const SizedBox(height: 14),
-                        const Text('暂无慢病用药记录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 6),
-                        const Text('录入药物后，系统将自动汇总同种药品的全部剂量变动并绘制走势图', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
+          // 3. 右下侧【可侧边折叠/吸附隐藏的灵动新增悬浮按钮】
+          Positioned(
+            right: 12,
+            bottom: 24,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 侧边折叠/展开小箭头手柄
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isFabExpanded = !_isFabExpanded;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF334155).withOpacity(0.8) : Colors.grey.shade300.withOpacity(0.85),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(8),
+                        bottomLeft: Radius.circular(8),
+                      ),
+                    ),
+                    child: Icon(
+                      _isFabExpanded ? Icons.chevron_right : Icons.chevron_left,
+                      size: 16,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                ),
+                // 主悬浮按钮
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeInOut,
+                  child: _isFabExpanded
+                      ? FloatingActionButton.extended(
+                          heroTag: 'med_add_fab_expanded',
+                          elevation: 3,
                           onPressed: () => _showEditMedicationDialog(context, null, null),
                           icon: const Icon(Icons.add),
-                          label: const Text('录入第一种慢病用药'),
+                          label: const Text('新增药品档案'),
+                        )
+                      : FloatingActionButton.small(
+                          heroTag: 'med_add_fab_collapsed',
+                          elevation: 3,
+                          tooltip: '新增药品档案',
+                          onPressed: () => _showEditMedicationDialog(context, null, null),
+                          child: const Icon(Icons.add),
                         ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    itemCount: drugTimelines.length,
-                    itemBuilder: (context, index) {
-                      final drug = drugTimelines[index];
-                      return _buildDrugAggregateCard(context, drug, isDark, prov);
-                    },
-                  ),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showEditMedicationDialog(context, null, null),
-        icon: const Icon(Icons.add),
-        label: const Text('新增药品档案'),
       ),
     );
   }
 
-  /// 构建同一种药物的整合卡片 (包含最新方案 + 剂量走势图 + 调药演变时间线)
+  /// 构建同一种药物的整合卡片
   Widget _buildDrugAggregateCard(
     BuildContext context,
     MedicationDrugTimeline drug,
@@ -116,7 +170,6 @@ class _MedicationsTabState extends State<MedicationsTab> {
     RecordsProvider prov,
   ) {
     final bool isStopped = drug.currentStatus == 'stopped';
-    final hasMultipleAdjustments = drug.historyPoints.length > 1;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -225,7 +278,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
             ),
             const SizedBox(height: 16),
 
-            // 📈 核心功能：同一种药物的【剂量演变趋势图】
+            // 📈 剂量演变趋势图
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -244,7 +297,6 @@ class _MedicationsTabState extends State<MedicationsTab> {
             ),
             const SizedBox(height: 8),
 
-            // 走势图绘制区
             Container(
               height: 160,
               padding: const EdgeInsets.only(top: 14, right: 16, left: 4, bottom: 6),
@@ -257,8 +309,17 @@ class _MedicationsTabState extends State<MedicationsTab> {
             ),
             const SizedBox(height: 16),
 
-            // 历次调药时间线与前后对比
-            const Text('调药演变历史记录：', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            // 历次调药时间线与前后对比 (每一项均支持编辑与删除)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('调药演变历史记录：', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                Text(
+                  '点击右侧按钮可修改记录',
+                  style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
 
             ListView.separated(
@@ -334,8 +395,35 @@ class _MedicationsTabState extends State<MedicationsTab> {
                         ],
                       ),
                     ),
+                    // ✏️ 修改此条记录按钮
+                    IconButton(
+                      icon: const Icon(Icons.edit_note, size: 20, color: Colors.blueAccent),
+                      tooltip: '修改此条调药记录',
+                      padding: const EdgeInsets.only(left: 4),
+                      constraints: const BoxConstraints(),
+                      onPressed: () {
+                        final rawPlan = prov.medicationPlans.firstWhere(
+                          (p) => p.id == point.id,
+                          orElse: () => MedicationPlan(
+                            id: point.id,
+                            diseaseId: drug.diseaseId,
+                            date: point.date,
+                            medicineName: drug.medicineName,
+                            dosage: point.dosageStr,
+                            frequency: point.frequency,
+                            reason: point.reason,
+                            notes: point.notes,
+                            changeType: point.changeType,
+                          ),
+                        );
+                        _showEditMedicationDialog(context, rawPlan, null);
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    // 🗑️ 删除此条记录按钮
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 16, color: Colors.grey),
+                      tooltip: '删除此记录',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: () => _confirmDeletePlan(context, point.id, drug.medicineName, point.date),
@@ -350,7 +438,6 @@ class _MedicationsTabState extends State<MedicationsTab> {
     );
   }
 
-  /// 绘制单种药物的剂量演变折线图
   Widget _buildDosageChart(List<MedicationAdjustmentPoint> history, bool isDark) {
     if (history.isEmpty) return const SizedBox.shrink();
 
@@ -430,7 +517,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
           LineChartBarData(
             spots: spots,
             isCurved: false,
-            isStepLineChart: true, // 阶梯图最贴近真实服药剂量演变
+            isStepLineChart: true,
             color: const Color(0xFF38BDF8),
             barWidth: 3,
             isStrokeCapRound: true,
@@ -481,7 +568,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(isEdit ? '编辑调药记录' : (prefilledName != null ? '记录【$prefilledName】新剂量' : '新增药品与方案')),
+              title: Text(isEdit ? '修改调药记录' : (prefilledName != null ? '记录【$prefilledName】新剂量' : '新增药品与方案')),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -568,7 +655,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
 
                     Row(
                       children: [
-                        const Text('当前服药状态：', style: TextStyle(fontSize: 13)),
+                        const Text('服药状态：', style: TextStyle(fontSize: 13)),
                         const SizedBox(width: 8),
                         ChoiceChip(
                           label: const Text('正在服用'),
