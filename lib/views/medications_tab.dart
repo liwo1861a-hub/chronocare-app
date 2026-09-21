@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -17,6 +18,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
   String _searchQuery = '';
   String _selectedDiseaseFilter = '';
   bool _isFabExpanded = true; // 控制新增按钮是否展开或侧边紧凑折叠
+  bool _isOverviewExpanded = true; // 控制顶部最新完整用药记录卡片是否展开
 
   @override
   void dispose() {
@@ -71,7 +73,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
                 ),
               ),
 
-              // 2. 核心内容区：同一种药物整合聚合列表
+              // 2. 核心内容区：顶部【最新完整用药总览记录】+ 下方【单药剂量演变趋势卡片】
               Expanded(
                 child: drugTimelines.isEmpty
                     ? Center(
@@ -94,9 +96,12 @@ class _MedicationsTabState extends State<MedicationsTab> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(14, 8, 14, 80), // 底部预留空间
-                        itemCount: drugTimelines.length,
+                        itemCount: drugTimelines.length + 1, // index 0 为顶部最新完整用药总览
                         itemBuilder: (context, index) {
-                          final drug = drugTimelines[index];
+                          if (index == 0) {
+                            return _buildLatestCompleteMedicationOverviewCard(context, drugTimelines, isDark, prov);
+                          }
+                          final drug = drugTimelines[index - 1];
                           return _buildDrugAggregateCard(context, drug, isDark, prov);
                         },
                       ),
@@ -158,6 +163,324 @@ class _MedicationsTabState extends State<MedicationsTab> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 🌟 顶部核心模块：最新药物完整记录总览卡片 (当前全部在服处方方案清单)
+  Widget _buildLatestCompleteMedicationOverviewCard(
+    BuildContext context,
+    List<MedicationDrugTimeline> drugTimelines,
+    bool isDark,
+    RecordsProvider prov,
+  ) {
+    final activeDrugs = drugTimelines.where((d) => d.currentStatus != 'stopped').toList();
+    final stoppedDrugs = drugTimelines.where((d) => d.currentStatus == 'stopped').toList();
+
+    DateTime? latestUpdateDate;
+    for (var d in drugTimelines) {
+      if (latestUpdateDate == null || d.latestDate.isAfter(latestUpdateDate)) {
+        latestUpdateDate = d.latestDate;
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          margin: const EdgeInsets.only(bottom: 14),
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: Colors.blueAccent.withOpacity(0.3), width: 1.2),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [
+                        const Color(0xFF1E293B),
+                        const Color(0xFF0F172A),
+                      ]
+                    : [
+                        const Color(0xFFF0F9FF),
+                        Colors.white,
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 顶部标题栏 + 徽章 + 操作工具
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.receipt_long, color: Colors.blueAccent, size: 22),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '最新在服药物完整记录',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            if (latestUpdateDate != null)
+                              Text(
+                                '最新方案调整: ${DateFormat("yyyy-MM-dd").format(latestUpdateDate)}',
+                                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        // 一键复制完整方案
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 19, color: Colors.blueAccent),
+                          tooltip: '复制当前完整用药方案',
+                          onPressed: () => _copyMedicationRegimen(context, activeDrugs, latestUpdateDate),
+                        ),
+                        // 折叠/展开按钮
+                        IconButton(
+                          icon: Icon(_isOverviewExpanded ? Icons.expand_less : Icons.expand_more, size: 22),
+                          tooltip: _isOverviewExpanded ? '折叠总览' : '展开总览',
+                          onPressed: () {
+                            setState(() {
+                              _isOverviewExpanded = !_isOverviewExpanded;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                // 方案统计栏
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF10B981)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '正在服用: ${activeDrugs.length} 种',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (stoppedDrugs.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '已停用: ${stoppedDrugs.length} 种',
+                          style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+
+                // 展开的完整处方清单列表
+                if (_isOverviewExpanded) ...[
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+
+                  if (activeDrugs.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text(
+                        '目前暂无正在服用的药物（已录入药物均处于停药状态）',
+                        style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                      ),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: activeDrugs.length,
+                      separatorBuilder: (c, i) => Divider(height: 16, color: isDark ? const Color(0xFF334155) : Colors.grey.shade200),
+                      itemBuilder: (context, idx) {
+                        final drug = activeDrugs[idx];
+                        final latestPoint = drug.historyPoints.isNotEmpty ? drug.historyPoints.last : null;
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 22,
+                              height: 22,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent.withOpacity(0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${idx + 1}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        drug.medicineName,
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                      ),
+                                      if (drug.diseaseName.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blueAccent.withOpacity(0.08),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            drug.diseaseName,
+                                            style: const TextStyle(fontSize: 10, color: Colors.blueAccent),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.blue.withOpacity(0.15)),
+                                    ),
+                                    child: Text(
+                                      '${drug.latestDosage.isNotEmpty ? drug.latestDosage : "未注明剂量"}   ·   ${drug.latestFrequency.isNotEmpty ? drug.latestFrequency : "未注明频次"}',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
+                                    ),
+                                  ),
+                                  if (latestPoint != null && latestPoint.reason.isNotEmpty) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '医嘱/原因: ${latestPoint.reason}',
+                                      style: const TextStyle(fontSize: 11, color: Colors.amber),
+                                    ),
+                                  ],
+                                  if (latestPoint != null && latestPoint.notes.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '注意事项: ${latestPoint.notes}',
+                                      style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        // 分割标题：各药品长期历史与走势图
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.timeline, size: 16, color: Colors.blueAccent),
+                  const SizedBox(width: 6),
+                  Text(
+                    '分项药品调药档案与走势图 (${drugTimelines.length}项)',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Text(
+                '单药长程剂量演变',
+                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 一键复制完整用药方案 (方便门诊出示或家属留档)
+  void _copyMedicationRegimen(BuildContext context, List<MedicationDrugTimeline> activeDrugs, DateTime? latestDate) {
+    if (activeDrugs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前暂无正在服用的药物方案')),
+      );
+      return;
+    }
+
+    final sb = StringBuffer();
+    sb.writeln('【脉络健康 · 最新慢病在服药物方案清单】');
+    if (latestDate != null) {
+      sb.writeln('最新调整日期: ${DateFormat("yyyy-MM-dd").format(latestDate)}');
+    }
+    sb.writeln('----------------------------------------');
+
+    for (int i = 0; i < activeDrugs.length; i++) {
+      final drug = activeDrugs[i];
+      sb.writeln('${i + 1}. ${drug.medicineName}${drug.diseaseName.isNotEmpty ? " [${drug.diseaseName}]" : ""}');
+      sb.writeln('   • 执行剂量: ${drug.latestDosage.isNotEmpty ? drug.latestDosage : "未注明"}');
+      sb.writeln('   • 服用频次: ${drug.latestFrequency.isNotEmpty ? drug.latestFrequency : "未注明"}');
+      final latestPoint = drug.historyPoints.isNotEmpty ? drug.historyPoints.last : null;
+      if (latestPoint != null && latestPoint.reason.isNotEmpty) {
+        sb.writeln('   • 调药医嘱: ${latestPoint.reason}');
+      }
+      if (latestPoint != null && latestPoint.notes.isNotEmpty) {
+        sb.writeln('   • 注意事项: ${latestPoint.notes}');
+      }
+      if (i < activeDrugs.length - 1) sb.writeln();
+    }
+
+    sb.writeln('----------------------------------------');
+    sb.writeln('当前在服共计: ${activeDrugs.length} 种药物');
+
+    Clipboard.setData(ClipboardData(text: sb.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ 已复制最新完整用药方案清单，可直接发给医生或家属！'),
+        duration: Duration(seconds: 3),
       ),
     );
   }

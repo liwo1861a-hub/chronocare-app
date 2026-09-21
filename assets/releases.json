@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.1.5",
-    "name": "ChronoCare v1.1.5 药品记录自由修改与侧边灵动折叠按钮版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.1.5\n- ✏️ 药品历史记录随心修改：支持编辑修改任意已记录的药品名称、剂量、调药日期、频次与医嘱原因\n- 🎛️ 侧边灵动折叠悬浮按钮：用药记录与提问备忘的新增按钮支持点击侧边手柄一键折叠收纳至屏幕右侧，彻底杜绝遮挡底部卡片\n- 🔍 纯净手势双指缩放即时响应与 360° 拖拽查看边缘\n- 📈 同一种药物剂量演变整合与阶梯趋势图\n- 📁 本地保存自定义文件夹\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T01:00:00Z",
+    "tag_name": "v1.1.6",
+    "name": "ChronoCare v1.1.6 顶部最新在服药物全景完整总览版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.1.6\n- 📋 顶部新增最新在服药物完整记录总览：汇集当前所有正在服用的慢病药品、最新剂量与服用频次，支持一键复制完整处方清单供门诊出示\n- ✏️ 药品历史记录随心修改：支持编辑修改任意已记录的药品名称、剂量、调药日期、频次与医嘱原因\n- 🎛️ 侧边灵动折叠悬浮按钮：用药记录与提问备忘的新增按钮支持点击侧边手柄一键折叠收纳至屏幕右侧，彻底杜绝遮挡底部卡片\n- 📈 同一种药物剂量演变整合与阶梯趋势图\n- 🔍 纯净手势双指缩放即时响应与 360° 拖拽查看边缘\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T02:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.1.5-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.5/app-release.apk"
+        "name": "chronocare-v1.1.6-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.6/app-release.apk"
       }
     ]
   }
