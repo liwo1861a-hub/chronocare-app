@@ -872,18 +872,68 @@ class _MedicationsTabState extends State<MedicationsTab> {
     );
   }
 
+  /// 智能微调剂量数值辅助方法 (支持 +0.25, -0.25, +0.5, -0.5, +半片 等)
+  void _adjustDosageValue(TextEditingController ctrl, double delta, {String? defaultUnit}) {
+    final text = ctrl.text.trim();
+    final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(text);
+    if (match != null) {
+      final curVal = double.tryParse(match.group(0)!) ?? 1.0;
+      final unit = text.replaceAll(match.group(0)!, '').trim();
+      final newVal = curVal + delta;
+      if (newVal > 0) {
+        String formatted = newVal.toStringAsFixed(2);
+        if (formatted.endsWith('00')) {
+          formatted = formatted.substring(0, formatted.length - 3);
+        } else if (formatted.endsWith('0')) {
+          formatted = formatted.substring(0, formatted.length - 1);
+        }
+        ctrl.text = '$formatted$unit';
+      }
+    } else {
+      final unit = defaultUnit ?? (text.isNotEmpty ? text : '片');
+      final val = (1.0 + delta) > 0 ? (1.0 + delta) : 0.5;
+      String formatted = val.toStringAsFixed(2);
+      if (formatted.endsWith('00')) {
+        formatted = formatted.substring(0, formatted.length - 3);
+      } else if (formatted.endsWith('0')) {
+        formatted = formatted.substring(0, formatted.length - 1);
+      }
+      ctrl.text = '$formatted$unit';
+    }
+  }
+
   void _showEditMedicationDialog(BuildContext context, MedicationPlan? existing, String? prefilledName) {
     final prov = Provider.of<RecordsProvider>(context, listen: false);
     final isEdit = existing != null;
+    final allTimelines = prov.getAggregatedMedicationTimelines();
+
+    // 智能查找上一次的记录方案作为微调基准
+    MedicationPlan? lastPlan;
+    if (existing != null) {
+      lastPlan = existing;
+    } else if (prefilledName != null && prefilledName.isNotEmpty) {
+      final matching = prov.medicationPlans.where((p) => p.medicineName.trim() == prefilledName.trim()).toList();
+      matching.sort((a, b) => b.date.compareTo(a.date));
+      if (matching.isNotEmpty) lastPlan = matching.first;
+    } else if (allTimelines.isNotEmpty) {
+      // 若是全局新增且存在历史药品，优先默认预备第一个药品供参考
+      final matching = prov.medicationPlans.where((p) => p.medicineName.trim() == allTimelines.first.medicineName.trim()).toList();
+      matching.sort((a, b) => b.date.compareTo(a.date));
+      if (matching.isNotEmpty) lastPlan = matching.first;
+    }
 
     DateTime chosenDate = existing?.date ?? DateTime.now();
-    final nameCtrl = TextEditingController(text: existing?.medicineName ?? prefilledName ?? '');
-    final dosageCtrl = TextEditingController(text: existing?.dosage ?? '');
-    final freqCtrl = TextEditingController(text: existing?.frequency ?? '');
+    final nameCtrl = TextEditingController(text: existing?.medicineName ?? lastPlan?.medicineName ?? prefilledName ?? '');
+    final dosageCtrl = TextEditingController(text: existing?.dosage ?? lastPlan?.dosage ?? '');
+    final freqCtrl = TextEditingController(text: existing?.frequency ?? lastPlan?.frequency ?? '');
     final reasonCtrl = TextEditingController(text: existing?.reason ?? '');
-    final notesCtrl = TextEditingController(text: existing?.notes ?? '');
-    String chosenDiseaseId = existing?.diseaseId ?? (prov.diseases.isNotEmpty ? prov.diseases.first.id : '');
-    String chosenStatus = existing?.status ?? 'active';
+    final notesCtrl = TextEditingController(text: existing?.notes ?? lastPlan?.notes ?? '');
+    String chosenDiseaseId = existing?.diseaseId ?? lastPlan?.diseaseId ?? (prov.diseases.isNotEmpty ? prov.diseases.first.id : '');
+    String chosenStatus = existing?.status ?? lastPlan?.status ?? 'active';
+
+    String loadedSourceTip = lastPlan != null && !isEdit
+        ? '已根据【${lastPlan.medicineName}】上一次方案载入 (${lastPlan.dosage.isNotEmpty ? lastPlan.dosage : "未注明"} · ${lastPlan.frequency.isNotEmpty ? lastPlan.frequency : "未注明"})，可直接微调'
+        : '';
 
     showDialog(
       context: context,
@@ -897,6 +947,80 @@ class _MedicationsTabState extends State<MedicationsTab> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 1. 上一次记录方案自动带入提示
+                    if (loadedSourceTip.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.withOpacity(0.25)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.auto_fix_high, size: 16, color: Colors.blueAccent),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                loadedSourceTip,
+                                style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
+                    // 2. 快速从已有药品一键切换载入并微调
+                    if (!isEdit && allTimelines.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.history_toggle_off, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          const Text('载入已有药品微调：', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: allTimelines.map((drug) {
+                                  final isCurrent = nameCtrl.text.trim() == drug.medicineName;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 6.0),
+                                    child: ActionChip(
+                                      visualDensity: VisualDensity.compact,
+                                      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                                      backgroundColor: isCurrent ? Colors.blueAccent.withOpacity(0.2) : null,
+                                      avatar: Icon(Icons.medication, size: 13, color: isCurrent ? Colors.blueAccent : Colors.grey),
+                                      label: Text(
+                                        '${drug.medicineName} (${drug.latestDosage})',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: isCurrent ? Colors.blueAccent : null,
+                                          fontWeight: isCurrent ? FontWeight.bold : null,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        setDialogState(() {
+                                          nameCtrl.text = drug.medicineName;
+                                          dosageCtrl.text = drug.latestDosage;
+                                          freqCtrl.text = drug.latestFrequency;
+                                          chosenDiseaseId = drug.diseaseId;
+                                          chosenStatus = drug.currentStatus;
+                                          loadedSourceTip = '已根据【${drug.medicineName}】上一次方案载入，可直接微调';
+                                        });
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.calendar_today, color: Colors.blueAccent),
@@ -929,6 +1053,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
                     ),
                     const SizedBox(height: 12),
 
+                    // 剂量与频次输入行
                     Row(
                       children: [
                         Expanded(
@@ -954,7 +1079,100 @@ class _MedicationsTabState extends State<MedicationsTab> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+
+                    // 3. 剂量微调快捷步进按钮 (一键增减)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.tune, size: 13, color: Colors.blueAccent),
+                          const SizedBox(width: 4),
+                          const Text('剂量微调: ', style: TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('-0.25', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, -0.25)),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('+0.25', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, 0.25)),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('-0.5', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, -0.5)),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('+0.5', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, 0.5)),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('-半片', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, -0.5, defaultUnit: '片')),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('+半片', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, 0.5, defaultUnit: '片')),
+                          ),
+                          const SizedBox(width: 4),
+                          ActionChip(
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                            label: const Text('+1片', style: TextStyle(fontSize: 11)),
+                            onPressed: () => setDialogState(() => _adjustDosageValue(dosageCtrl, 1.0, defaultUnit: '片')),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    // 4. 常用服用频次快捷微调标签
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.schedule, size: 13, color: Colors.teal),
+                          const SizedBox(width: 4),
+                          const Text('频次快选: ', style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w600)),
+                          ...['每日1次', '每日2次', '每日3次', '随餐服用', '饭前', '饭后', '早晨空腹', '睡前'].map((freq) => Padding(
+                            padding: const EdgeInsets.only(right: 4.0),
+                            child: ActionChip(
+                              visualDensity: VisualDensity.compact,
+                              labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                              label: Text(freq, style: const TextStyle(fontSize: 11)),
+                              onPressed: () {
+                                setDialogState(() {
+                                  if (freqCtrl.text.isEmpty) {
+                                    freqCtrl.text = freq;
+                                  } else if (!freqCtrl.text.contains(freq)) {
+                                    freqCtrl.text = '${freqCtrl.text} $freq';
+                                  } else {
+                                    freqCtrl.text = freq;
+                                  }
+                                });
+                              },
+                            ),
+                          )),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
 
                     TextField(
                       controller: reasonCtrl,
@@ -964,7 +1182,33 @@ class _MedicationsTabState extends State<MedicationsTab> {
                         border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
+
+                    // 5. 常用调药原因快选
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.tips_and_updates_outlined, size: 13, color: Colors.amber),
+                          const SizedBox(width: 4),
+                          const Text('原因预设: ', style: TextStyle(fontSize: 11, color: Colors.amber, fontWeight: FontWeight.w600)),
+                          ...['指标偏高加量', '控制平稳维持', '指标达标减量', '遵医嘱开始服药', '遵医嘱停药'].map((r) => Padding(
+                            padding: const EdgeInsets.only(right: 4.0),
+                            child: ActionChip(
+                              visualDensity: VisualDensity.compact,
+                              labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                              label: Text(r, style: const TextStyle(fontSize: 11)),
+                              onPressed: () {
+                                setDialogState(() {
+                                  reasonCtrl.text = r;
+                                });
+                              },
+                            ),
+                          )),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
 
                     TextField(
                       controller: notesCtrl,
