@@ -6,6 +6,7 @@ import '../models/check_item.dart';
 import '../models/category_group.dart';
 import '../models/medication_plan.dart';
 import '../models/consultation_question.dart';
+import '../models/medication_inventory.dart';
 import '../services/storage_service.dart';
 
 class MetricHistoryPoint {
@@ -120,6 +121,7 @@ class RecordsProvider with ChangeNotifier {
   List<CategoryGroup> _categoryGroups = [];
   List<MedicationPlan> _medicationPlans = [];
   List<ConsultationQuestion> _consultationQuestions = [];
+  List<MedicationInventory> _medicationInventories = [];
   bool _isLoading = true;
 
   String _searchQuery = '';
@@ -131,6 +133,9 @@ class RecordsProvider with ChangeNotifier {
   List<CategoryGroup> get categoryGroups => _categoryGroups;
   List<MedicationPlan> get medicationPlans => _medicationPlans;
   List<ConsultationQuestion> get consultationQuestions => _consultationQuestions;
+  List<MedicationInventory> get medicationInventories => _medicationInventories;
+  List<MedicationInventory> get shortageInventories => _medicationInventories.where((i) => i.isShortage).toList();
+  int get shortageCount => shortageInventories.length;
   bool get isLoading => _isLoading;
   String get searchQuery => _searchQuery;
   String get selectedDiseaseId => _selectedDiseaseId;
@@ -145,6 +150,7 @@ class RecordsProvider with ChangeNotifier {
     _categoryGroups = await StorageService.instance.getCategoryGroups();
     _medicationPlans = await StorageService.instance.getMedicationPlans();
     _consultationQuestions = await StorageService.instance.getConsultationQuestions();
+    _medicationInventories = await StorageService.instance.getMedicationInventories();
 
     if (_diseases.isEmpty) {
       final defaultDisease = Disease(
@@ -750,6 +756,52 @@ class RecordsProvider with ChangeNotifier {
     }
 
     return groups.reversed.toList();
+  }
+
+  // =========================================================================
+  // --- 💊 药箱存量管理与缺药智能预警 ---
+  // =========================================================================
+
+  Future<void> saveMedicationInventory(MedicationInventory item) async {
+    await StorageService.instance.saveMedicationInventory(item);
+    final idx = _medicationInventories.indexWhere((i) => i.id == item.id);
+    if (idx >= 0) {
+      _medicationInventories[idx] = item;
+    } else {
+      _medicationInventories.insert(0, item);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteMedicationInventory(String id) async {
+    await StorageService.instance.deleteMedicationInventory(id);
+    _medicationInventories.removeWhere((i) => i.id == id);
+    notifyListeners();
+  }
+
+  Future<void> batchImportMedicationInventories(List<MedicationInventory> items) async {
+    for (var item in items) {
+      await StorageService.instance.saveMedicationInventory(item);
+      final idx = _medicationInventories.indexWhere((i) => i.medicineName.trim() == item.medicineName.trim() || i.id == item.id);
+      if (idx >= 0) {
+        _medicationInventories[idx] = item;
+      } else {
+        _medicationInventories.insert(0, item);
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> updateInventoryStock(String id, double delta) async {
+    final idx = _medicationInventories.indexWhere((i) => i.id == id);
+    if (idx >= 0) {
+      final cur = _medicationInventories[idx];
+      final newStock = (cur.currentStock + delta) > 0 ? (cur.currentStock + delta) : 0.0;
+      cur.currentStock = newStock;
+      cur.updatedAt = DateTime.now();
+      await StorageService.instance.saveMedicationInventory(cur);
+      notifyListeners();
+    }
   }
 }
 

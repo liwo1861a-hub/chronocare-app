@@ -5,6 +5,7 @@ import '../providers/settings_provider.dart';
 import 'timeline_tab.dart';
 import 'metrics_trend_tab.dart';
 import 'medications_tab.dart';
+import 'inventory_tab.dart';
 import 'questions_tab.dart';
 import 'diseases_tab.dart';
 import 'record_edit_screen.dart';
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
     TimelineTab(),
     MetricsTrendTab(),
     MedicationsTab(),
+    InventoryTab(),
     QuestionsTab(),
     DiseasesTab(),
   ];
@@ -35,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     '复查时间轴',
     '核心指标趋势',
     '慢病用药记录',
+    '药箱存量预警',
     '复查提问备忘',
     '慢病病程档案',
   ];
@@ -131,28 +134,41 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentIndex = index;
           });
         },
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.timeline_outlined),
             selectedIcon: Icon(Icons.timeline),
             label: '时间轴',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.show_chart_outlined),
             selectedIcon: Icon(Icons.show_chart),
             label: '指标走势',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.medication_outlined),
             selectedIcon: Icon(Icons.medication),
-            label: '药物记录',
+            label: '用药记录',
           ),
           NavigationDestination(
+            icon: Badge(
+              isLabelVisible: recordsProv.shortageCount > 0,
+              label: Text('${recordsProv.shortageCount}'),
+              child: const Icon(Icons.inventory_2_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: recordsProv.shortageCount > 0,
+              label: Text('${recordsProv.shortageCount}'),
+              child: const Icon(Icons.inventory_2),
+            ),
+            label: '药箱存量',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.live_help_outlined),
             selectedIcon: Icon(Icons.live_help),
             label: '提问备忘',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.folder_shared_outlined),
             selectedIcon: Icon(Icons.folder_shared),
             label: '慢病档案',

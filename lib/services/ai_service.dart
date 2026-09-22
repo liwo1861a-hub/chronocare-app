@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/check_item.dart';
 import '../models/medication.dart';
 import '../models/app_settings.dart';
+import '../models/medication_inventory.dart';
 
 class AiAnalysisResult {
   final DateTime? checkDate;
@@ -269,5 +270,179 @@ $medsSummary
     } catch (e) {
       throw Exception('解析化验单 JSON 失败: $e\n原始返回: $jsonString');
     }
+  }
+
+  /// 通过 AI 解析用户自由输入的文本（或离线降级正则解析），提取结构化药物存量与每日消耗
+  Future<List<MedicationInventory>> parseMedicationInventoryText({
+    required String text,
+    required AppSettings settings,
+  }) async {
+    final cleanInput = text.trim();
+    if (cleanInput.isEmpty) return [];
+
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customApiKey;
+
+    // 如果未配置 AI API Key，采用本地高精度医疗文本正则解析器兜底
+    if (apiKey.isEmpty) {
+      return _parseInventoryLocally(cleanInput);
+    }
+
+    final prompt = '''
+你是一位资深医疗药剂师与数据结构化专家。用户提供了一段关于家中慢病药物存量、开药记录或盘点的口语化描述。
+请将其中涉及的所有药品名称、当前剩余库存数量、单位、每日预计消耗量、规格包装和备注准确提取并折算为结构化 JSON 数组。
+
+【🚨 折算与提取硬性规则】：
+1. 数量折算：如果用户描述包含盒数与每盒规格（如“开了3盒二甲双胍，每盒60片，还有上次剩下的12片”），必须计算总可用片数（3*60 + 12 = 192片）。
+2. 每日消耗：根据用户描述（如“每天吃2片”、“每日3次每次1片”等），计算每日总片数。如果未提及，默认 1.0。
+3. 预警天数阈值：默认 7 天。
+4. 单位：根据描述提取，通常为“片”、“粒”、“支”、“袋”、“盒”等，默认为“片”。
+
+请严格返回纯 JSON 数组（不要包含任何 markdown 说明之外的文字）：
+[
+  {
+    "medicineName": "药品通用名(如: 二甲双胍片)",
+    "currentStock": 192.0,
+    "unit": "片",
+    "dailyConsumption": 2.0,
+    "alertThresholdDays": 7,
+    "packageSpec": "规格(如: 60片/盒)",
+    "notes": "备注说明"
+  }
+]
+用户输入的文本如下：
+$cleanInput
+''';
+
+    try {
+      final model = settings.geminiModel.isNotEmpty ? settings.geminiModel : 'gemini-3.7-flash';
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+      );
+
+      final requestBody = {
+        "contents": [
+          {
+            "parts": [{"text": prompt}]
+          }
+        ],
+        "generationConfig": {
+          "response_mime_type": "application/json",
+          "temperature": 0.1,
+        }
+      };
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 25));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final candidates = data['candidates'] as List?;
+        if (candidates != null && candidates.isNotEmpty) {
+          final resText = candidates[0]['content']['parts'][0]['text']?.toString() ?? '';
+          final items = _parseInventoryJson(resText);
+          if (items.isNotEmpty) return items;
+        }
+      }
+    } catch (_) {
+      // 出现异常时无缝降级兜底
+    }
+
+    return _parseInventoryLocally(cleanInput);
+  }
+
+  List<MedicationInventory> _parseInventoryJson(String jsonString) {
+    try {
+      String clean = jsonString.trim();
+      if (clean.startsWith('```json')) clean = clean.substring(7);
+      if (clean.startsWith('```')) clean = clean.substring(3);
+      if (clean.endsWith('```')) clean = clean.substring(0, clean.length - 3);
+      clean = clean.trim();
+
+      final decoded = jsonDecode(clean);
+      if (decoded is List) {
+        final List<MedicationInventory> list = [];
+        for (var item in decoded) {
+          if (item is Map) {
+            final name = item['medicineName']?.toString().trim() ?? '';
+            if (name.isNotEmpty) {
+              list.add(MedicationInventory(
+                id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + list.length.toString(),
+                medicineName: name,
+                currentStock: (item['currentStock'] as num?)?.toDouble() ?? 10.0,
+                unit: item['unit']?.toString().trim() ?? '片',
+                dailyConsumption: (item['dailyConsumption'] as num?)?.toDouble() ?? 1.0,
+                alertThresholdDays: (item['alertThresholdDays'] as num?)?.toInt() ?? 7,
+                packageSpec: item['packageSpec']?.toString().trim() ?? '',
+                notes: item['notes']?.toString().trim() ?? '',
+                updatedAt: DateTime.now(),
+              ));
+            }
+          }
+        }
+        return list;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 本地智能正则降级解析器 (无需网络与 API Key)
+  List<MedicationInventory> _parseInventoryLocally(String text) {
+    final List<MedicationInventory> list = [];
+    final clauses = text.split(RegExp(r'[\n;；,，。、]+')).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+
+    for (var clause in clauses) {
+      // 尝试匹配药品名、数量与频次
+      // 例如: "开了3盒二甲双胍每盒60片每天2片" 或 "苯溴马隆20片每天1片"
+      final stockMatch = RegExp(r'(\d+)\s*(盒|瓶|支|袋|包|粒|片)').firstMatch(clause);
+      final dailyMatch = RegExp(r'(?:每天|每日|每顿|每次|日服)\s*(\d+(?:\.\d+)?)\s*(?:次|片|粒)?').firstMatch(clause);
+
+      // 提取中文药品名称候选 (剔除开、买、还剩、盒、片等干扰词)
+      String cleanName = clause
+          .replaceAll(RegExp(r'(今天|昨天|去医院|买了|开了|还剩|还有|家里|目前|每天|每日|每盒|一共|共|每次|饭后|随餐)'), '')
+          .replaceAll(RegExp(r'\d+(?:\.\d+)?\s*(盒|瓶|支|袋|包|粒|片|次|天)'), '')
+          .replaceAll(RegExp(r'[0-9\.\+\-\*\/]'), '')
+          .trim();
+
+      if (cleanName.length >= 2 && cleanName.length <= 15) {
+        double stock = 30.0;
+        String unit = '片';
+        if (stockMatch != null) {
+          final count = double.tryParse(stockMatch.group(1)!) ?? 1.0;
+          final unitStr = stockMatch.group(2) ?? '片';
+          if (unitStr == '盒' || unitStr == '瓶') {
+            // 如果是盒，检查是否有每盒规格如每盒60片
+            final specMatch = RegExp(r'(?:每盒|每瓶)\s*(\d+)\s*(?:片|粒)').firstMatch(clause);
+            final specCount = specMatch != null ? (double.tryParse(specMatch.group(1)!) ?? 30.0) : 30.0;
+            stock = count * specCount;
+            unit = '片';
+          } else {
+            stock = count;
+            unit = unitStr;
+          }
+        }
+
+        double daily = 1.0;
+        if (dailyMatch != null) {
+          daily = double.tryParse(dailyMatch.group(1)!) ?? 1.0;
+        }
+
+        list.add(MedicationInventory(
+          id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + list.length.toString(),
+          medicineName: cleanName,
+          currentStock: stock,
+          unit: unit,
+          dailyConsumption: daily > 0 ? daily : 1.0,
+          alertThresholdDays: 7,
+          packageSpec: clause.contains('盒') ? '盒装' : '',
+          notes: '由文字智能识别录入',
+          updatedAt: DateTime.now(),
+        ));
+      }
+    }
+
+    return list;
   }
 }

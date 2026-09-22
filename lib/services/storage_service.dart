@@ -10,6 +10,7 @@ import '../models/app_settings.dart';
 import '../models/category_group.dart';
 import '../models/medication_plan.dart';
 import '../models/consultation_question.dart';
+import '../models/medication_inventory.dart';
 
 class StorageService {
   static final StorageService instance = StorageService._();
@@ -25,7 +26,7 @@ class StorageService {
 
     _db = await openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE diseases (
@@ -100,6 +101,20 @@ class StorageService {
             createdAt TEXT
           )
         ''');
+
+        await db.execute('''
+          CREATE TABLE medication_inventories (
+            id TEXT PRIMARY KEY,
+            medicineName TEXT NOT NULL,
+            currentStock REAL,
+            unit TEXT,
+            dailyConsumption REAL,
+            alertThresholdDays INTEGER,
+            packageSpec TEXT,
+            notes TEXT,
+            updatedAt TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -141,6 +156,21 @@ class StorageService {
               doctorAnswer TEXT,
               category TEXT,
               createdAt TEXT
+            )
+          ''');
+        }
+        if (oldVersion < 4) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS medication_inventories (
+              id TEXT PRIMARY KEY,
+              medicineName TEXT NOT NULL,
+              currentStock REAL,
+              unit TEXT,
+              dailyConsumption REAL,
+              alertThresholdDays INTEGER,
+              packageSpec TEXT,
+              notes TEXT,
+              updatedAt TEXT
             )
           ''');
         }
@@ -241,6 +271,24 @@ class StorageService {
     await _db!.delete('consultation_questions', where: 'id = ?', whereArgs: [id]);
   }
 
+  // --- 药物存量与药箱操作 ---
+  Future<List<MedicationInventory>> getMedicationInventories() async {
+    final res = await _db!.query('medication_inventories', orderBy: 'updatedAt DESC');
+    return res.map((m) => MedicationInventory.fromMap(m)).toList();
+  }
+
+  Future<void> saveMedicationInventory(MedicationInventory item) async {
+    await _db!.insert(
+      'medication_inventories',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteMedicationInventory(String id) async {
+    await _db!.delete('medication_inventories', where: 'id = ?', whereArgs: [id]);
+  }
+
   // --- 设置操作 ---
   Future<AppSettings> getSettings() async {
     if (_prefs == null) await init();
@@ -268,17 +316,19 @@ class StorageService {
     final groups = await getCategoryGroups();
     final meds = await getMedicationPlans();
     final questions = await getConsultationQuestions();
+    final inventories = await getMedicationInventories();
     final settings = await getSettings();
 
     return {
       'app': 'ChronoCare',
-      'version': '1.1.0',
+      'version': '1.1.7',
       'exported_at': DateTime.now().toIso8601String(),
       'diseases': diseases.map((d) => d.toMap()).toList(),
       'records': records.map((r) => r.toMap()).toList(),
       'category_groups': groups.map((g) => g.toMap()).toList(),
       'medication_plans': meds.map((m) => m.toMap()).toList(),
       'consultation_questions': questions.map((q) => q.toMap()).toList(),
+      'medication_inventories': inventories.map((i) => i.toMap()).toList(),
       'settings': settings.toMap(),
     };
   }
@@ -308,6 +358,11 @@ class StorageService {
     if (data['consultation_questions'] != null && data['consultation_questions'] is List) {
       for (var qMap in data['consultation_questions']) {
         await saveConsultationQuestion(ConsultationQuestion.fromMap(Map<String, dynamic>.from(qMap)));
+      }
+    }
+    if (data['medication_inventories'] != null && data['medication_inventories'] is List) {
+      for (var iMap in data['medication_inventories']) {
+        await saveMedicationInventory(MedicationInventory.fromMap(Map<String, dynamic>.from(iMap)));
       }
     }
     if (data['settings'] != null && data['settings'] is Map) {

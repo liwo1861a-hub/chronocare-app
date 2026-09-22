@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.1.7",
-    "name": "ChronoCare v1.1.7 药物前次方案智能微调与步进录入版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.1.7\n- ⚡ 药物微调录入体系：通用名、单次剂量与服用频次自动根据上一次方案智能载入，支持已有药品一键切换\n- 🎛️ 剂量精准步进微调：提供 +0.25 / -0.25 / +0.5 / -0.5 / +半片 / -半片 剂量步进微调按钮\n- 🕒 常用频次与医嘱一键填充：预设每日1次、2次、3次、随餐及指标偏高加量等常用医嘱，一键微调后直接保存为最新记录\n- 📋 顶部最新在服药物全景完整总览与一键复制处方清单\n- ✏️ 药品历史记录自由修改与侧边灵动折叠悬浮按钮\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T03:00:00Z",
+    "tag_name": "v1.1.8",
+    "name": "ChronoCare v1.1.8 独立药箱存量模块与AI文本自动识别入库版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.1.8\n- 📦 独立全新模块【药箱存量与补药预警】：精准记录药品剩余存量、每日消耗并推算可用天数，缺药时自动醒目告警提醒\n- 🤖 AI 存量文本智能提取入库：允许直接粘贴处方小票或随手打字描述，AI 自动提取药品通用名、折算总片数与日消耗，支持导入前微调核对与一键入库\n- 💊 快捷服药打卡与补药：支持一键服药扣减今日用量、一键加量补药，随时手动修改存量与预警天数阈值\n- ⚡ 药物微调录入体系：通用名、单次剂量与服用频次自动根据上一次方案智能载入与步进增减\n- 📋 顶部最新在服药物全景完整总览与一键复制处方清单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T04:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.1.7-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.7/app-release.apk"
+        "name": "chronocare-v1.1.8-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.8/app-release.apk"
       }
     ]
   }

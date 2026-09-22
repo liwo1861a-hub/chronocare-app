@@ -309,6 +309,31 @@ class _MedicationsTabState extends State<MedicationsTab> {
                   ],
                 ),
 
+                // 缺药预警提醒通知
+                if (prov.shortageCount > 0) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '药箱预警：有 ${prov.shortageCount} 种药品存量即将不足，请切换至【药箱存量】查看！',
+                            style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // 展开的完整处方清单列表
                 if (_isOverviewExpanded) ...[
                   const SizedBox(height: 14),
