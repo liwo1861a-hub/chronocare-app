@@ -1,7 +1,7 @@
 name: chronocare
 description: "ChronoCare (慢病复查助手) - 基于 Flutter 开发的高自定义慢病复查记录、AI 多模态化验单识别、历史指标对比与 WebDAV 自动同步移动端 App"
 publish_to: 'none'
-version: 1.1.9+20
+version: 1.2.0+21
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

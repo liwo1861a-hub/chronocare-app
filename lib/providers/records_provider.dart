@@ -287,18 +287,22 @@ class RecordsProvider with ChangeNotifier {
       return;
     }
 
-    final Set<String> allImages = Set.from(existing.imagePaths);
+    final List<String> allImages = List.from(existing.imagePaths);
     for (var img in newRecord.imagePaths) {
-      if (img.isNotEmpty) allImages.add(img);
+      if (img.isNotEmpty && !allImages.contains(img)) {
+        allImages.add(img);
+      }
     }
-    existing.imagePaths = allImages.toList();
+    existing.imagePaths = allImages;
 
+    // 以 [栏目分类 + 指标名称] 复合唯一键进行智能合并，避免不同化验单同名指标误覆盖
     final Map<String, CheckItem> itemMap = {};
     for (var it in existing.items) {
-      itemMap[it.itemName.trim()] = it;
+      final key = '${it.category.trim()}_${it.itemName.trim()}';
+      itemMap[key] = it;
     }
     for (var it in newRecord.items) {
-      final key = it.itemName.trim();
+      final key = '${it.category.trim()}_${it.itemName.trim()}';
       if (itemMap.containsKey(key)) {
         final ex = itemMap[key]!;
         if (ex.value != it.value) {

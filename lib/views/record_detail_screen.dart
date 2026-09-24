@@ -24,6 +24,20 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
   bool _isSummarizingAdvice = false;
   int _selectedCategoryIndex = 0;
   bool _showOnlyCurrentCategoryImages = true;
+  late PageController _imagePageController;
+  int _currentImageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _imagePageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _imagePageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +270,16 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                     return GestureDetector(
                       onTap: () {
                         setState(() => _selectedCategoryIndex = idx);
+                        if (catName != '全部指标') {
+                          final imgIdx = record.imagePaths.indexWhere((p) => imageCategoryMap[p] == catName);
+                          if (imgIdx >= 0 && _imagePageController.hasClients) {
+                            _imagePageController.animateToPage(
+                              imgIdx,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                            );
+                          }
+                        }
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -395,83 +419,200 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
                       const Divider(height: 20),
 
-                      // 图片控制栏：切换“仅看本栏目对应图片”与“查看所有图片”
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _showOnlyCurrentCategoryImages ? '📷 对应化验单原图 (${displayImages.length}张)' : '📷 本次复查所有化验单 (${displayImages.length}张)',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey),
-                          ),
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                      // 🌟 核心：化验单大图横向滑动卡片 (左右滑动切换化验单原图，自动联动下方栏目)
+                      if (record.imagePaths.isNotEmpty) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '📷 化验单原图 (${record.imagePaths.length}张 · 左右滑动切换)',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey),
                             ),
-                            icon: Icon(
-                              _showOnlyCurrentCategoryImages ? Icons.filter_alt_outlined : Icons.collections_outlined,
-                              size: 14,
+                            Text(
+                              '${_currentImageIndex + 1}/${record.imagePaths.length}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueAccent),
                             ),
-                            label: Text(
-                              _showOnlyCurrentCategoryImages ? '切换为看所有图片' : '切换为仅看对应图片',
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showOnlyCurrentCategoryImages = !_showOnlyCurrentCategoryImages;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
 
-                      // 缩略图区域：点击打开无黑边遮挡、支持左右滑动切换图片与栏目的全屏画廊
-                      if (displayImages.isNotEmpty)
-                        SizedBox(
-                          height: 110,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: displayImages.length,
-                            itemBuilder: (ctx, imgIdx) {
-                              final imgPath = displayImages[imgIdx];
-                              return GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PhotoGalleryViewer(
-                                        imagePaths: record.imagePaths,
-                                        initialIndex: record.imagePaths.indexOf(imgPath) >= 0
-                                            ? record.imagePaths.indexOf(imgPath)
-                                            : 0,
-                                        imageCategoryMap: imageCategoryMap,
-                                        onPageChanged: (newIdx, catName) {
-                                          if (catName != null) {
-                                            final cIdx = categoryNames.indexOf(catName);
-                                            if (cIdx >= 0 && mounted) {
-                                              setState(() => _selectedCategoryIndex = cIdx);
-                                            }
-                                          }
-                                        },
-                                      ),
+                        Container(
+                          height: 230,
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.black87,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : Colors.grey.shade300),
+                          ),
+                          child: Stack(
+                            children: [
+                              PageView.builder(
+                                controller: _imagePageController,
+                                itemCount: record.imagePaths.length,
+                                onPageChanged: (newIdx) {
+                                  setState(() => _currentImageIndex = newIdx);
+                                  // 左右滑动图片时，自动联动切换下方选中的化验单栏目
+                                  final imgPath = record.imagePaths[newIdx];
+                                  final mappedCat = imageCategoryMap[imgPath];
+                                  if (mappedCat != null) {
+                                    final catIdx = categoryNames.indexOf(mappedCat);
+                                    if (catIdx >= 0) {
+                                      setState(() => _selectedCategoryIndex = catIdx);
+                                    }
+                                  }
+                                },
+                                itemBuilder: (ctx, imgIdx) {
+                                  final imgPath = record.imagePaths[imgIdx];
+                                  final imgFile = File(imgPath);
+                                  return GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PhotoGalleryViewer(
+                                            imagePaths: record.imagePaths,
+                                            initialIndex: imgIdx,
+                                            imageCategoryMap: imageCategoryMap,
+                                            onPageChanged: (newIdx, catName) {
+                                              if (_imagePageController.hasClients) {
+                                                _imagePageController.jumpToPage(newIdx);
+                                              }
+                                              setState(() => _currentImageIndex = newIdx);
+                                              if (catName != null) {
+                                                final cIdx = categoryNames.indexOf(catName);
+                                                if (cIdx >= 0) {
+                                                  setState(() => _selectedCategoryIndex = cIdx);
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: imgFile.existsSync()
+                                          ? Image.file(
+                                              imgFile,
+                                              fit: BoxFit.contain,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                            )
+                                          : const Center(
+                                              child: Text('化验单图片不存在', style: TextStyle(color: Colors.white70)),
+                                            ),
                                     ),
                                   );
                                 },
-                                child: Container(
-                                  margin: const EdgeInsets.only(right: 10),
-                                  width: 105,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: isDark ? const Color(0xFF475569) : Colors.grey.shade300),
-                                    image: DecorationImage(image: FileImage(File(imgPath)), fit: BoxFit.cover),
+                              ),
+
+                              // 顶部悬浮信息徽章
+                              Positioned(
+                                top: 8,
+                                left: 8,
+                                right: 8,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.65),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '📷 ${_currentImageIndex + 1}/${record.imagePaths.length} · ${imageCategoryMap[record.imagePaths[_currentImageIndex >= record.imagePaths.length ? 0 : _currentImageIndex]] ?? "化验单"}',
+                                        style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.65),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(Icons.zoom_in, color: Colors.lightBlueAccent, size: 14),
+                                          SizedBox(width: 4),
+                                          Text('点击放大双指缩放', style: TextStyle(fontSize: 11, color: Colors.lightBlueAccent)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // 左右切换控制小箭头
+                              if (record.imagePaths.length > 1) ...[
+                                if (_currentImageIndex > 0)
+                                  Positioned(
+                                    left: 6,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Center(
+                                      child: CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: Colors.black54,
+                                        child: IconButton(
+                                          padding: EdgeInsets.zero,
+                                          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 20),
+                                          onPressed: () {
+                                            _imagePageController.previousPage(
+                                              duration: const Duration(milliseconds: 250),
+                                              curve: Curves.easeInOut,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (_currentImageIndex < record.imagePaths.length - 1)
+                                  Positioned(
+                                    right: 6,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Center(
+                                      child: CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: Colors.black54,
+                                        child: IconButton(
+                                          padding: EdgeInsets.zero,
+                                          icon: const Icon(Icons.chevron_right, color: Colors.white, size: 20),
+                                          onPressed: () {
+                                            _imagePageController.nextPage(
+                                              duration: const Duration(milliseconds: 250),
+                                              curve: Curves.easeInOut,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+
+                              // 底部手势引导提示
+                              Positioned(
+                                bottom: 6,
+                                left: 0,
+                                right: 0,
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.55),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      '👈 左右滑动快速切换化验单原图 👉',
+                                      style: TextStyle(fontSize: 10, color: Colors.white70),
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                            ],
                           ),
-                        )
-                      else
+                        ),
+                      ] else ...[
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -479,9 +620,10 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Center(
-                            child: Text('本栏目暂无单独绑定的原图 (可点击右上角切换为查看所有图片)', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                            child: Text('本档案暂无绑定的化验单原图', style: TextStyle(color: Colors.grey, fontSize: 12)),
                           ),
                         ),
+                      ],
                       const SizedBox(height: 14),
 
                       // 栏目下的检验指标结果表格

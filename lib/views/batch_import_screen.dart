@@ -42,7 +42,7 @@ class BatchImportScreen extends StatefulWidget {
 class _BatchImportScreenState extends State<BatchImportScreen> {
   final List<BatchTaskItem> _tasks = [];
   bool _isProcessing = false;
-  bool _separateRecordsPerImage = true; // 默认每张图片独立分开建档，化验单不强行挤压合并
+  bool _mergeSameDateRecords = true; // 同一个日期的自动规整保存在同一个档案里
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +58,7 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
             TextButton.icon(
               icon: const Icon(Icons.done_all, color: Colors.white),
               label: Text(
-                _separateRecordsPerImage ? '全部独立入库' : '合并日期入库',
+                _mergeSameDateRecords ? '按日期规整入库' : '单张独立入库',
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
               onPressed: () => _saveAllCompletedTasks(recordsProv),
@@ -109,15 +109,15 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
                   SwitchListTile(
                     title: const Row(
                       children: [
-                        Icon(Icons.collections_bookmark_outlined, size: 20, color: Colors.blueAccent),
+                        Icon(Icons.folder_shared_outlined, size: 20, color: Colors.blueAccent),
                         SizedBox(width: 8),
-                        Text('开关 3：每张化验单图片独立分开保存', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text('开关 3：同日化验单自动规整在同一档案', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       ],
                     ),
-                    subtitle: const Text('推荐开启：保持各张化验单(如血常规/尿常规/生化)独立分开，图片与检验项1对1对应', style: TextStyle(fontSize: 12)),
-                    value: _separateRecordsPerImage,
+                    subtitle: const Text('推荐开启：同一天就医复查的多张化验单自动规整在同一份档案中，支持在档案内滑动切图与分栏整理', style: TextStyle(fontSize: 12)),
+                    value: _mergeSameDateRecords,
                     onChanged: (val) {
-                      setState(() => _separateRecordsPerImage = val);
+                      setState(() => _mergeSameDateRecords = val);
                     },
                   ),
                 ],
@@ -356,12 +356,12 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           medicationChanges: res.medicationChanges,
         );
 
-        if (_separateRecordsPerImage) {
-          // 独立分开保存每张化验单，与联网 OCR 一样保持图片与单据分开
-          await recordsProv.saveRecord(rec);
-        } else {
-          // 按开单日期合并
+        if (_mergeSameDateRecords) {
+          // 同一个日期的自动规整保存在同一个档案里
           await recordsProv.mergeOrSaveRecordByDate(rec);
+        } else {
+          // 独立分开保存
+          await recordsProv.saveRecord(rec);
         }
         processedCount++;
       }
@@ -371,9 +371,9 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _separateRecordsPerImage
-                ? '✅ 已成功将 $processedCount 份化验单独立分开保存入库！'
-                : '✅ 已自动按开单日期合并入库 $processedCount 份化验单！',
+            _mergeSameDateRecords
+                ? '✅ 已成功将 $processedCount 份化验单按就诊日期自动规整至复查档案！'
+                : '✅ 已将 $processedCount 份化验单独立保存入库！',
           ),
         ),
       );

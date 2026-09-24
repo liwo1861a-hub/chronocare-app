@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.1.9",
-    "name": "ChronoCare v1.1.9 OCR/AI全量指标提取·独立分图分单建档·药名长文本自适应修复版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.1.9\n- 🔬 修复三种 OCR 与 AI 整理指标遗漏：强化 AI 指标 100% 全量提取铁律（严格禁止只提取异常项，双栏全表格指标逐行扫描），设置 8192 Token 极限防截断，新增本地正则提取兜底\n- 📄 修复 AI 识图多图合并问题：支持每张化验单图片独立分开建档（图片与指标1对1精准对应，绝不粗暴强行挤压合并），与联网 OCR 保持完全一致的分图分单架构\n- 📊 时间轴与详情全量指标展示：解除时间轴前4项限制，支持单据指标一键展开/收起；详情页新增【全部指标】全景视图，杜绝指标隐匿\n- 💊 彻底修复超长药品名排版溢出：优化用药记录卡片标题布局为弹性伸缩自适应，保证【记录调药】按钮永不被挤出屏幕且永久有效\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T05:00:00Z",
+    "tag_name": "v1.2.0",
+    "name": "ChronoCare v1.2.0 同日化验单自动规整同一档案·大图左右滑动与双向联动版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.2.0\n- 📑 同日化验单自动规整同一档案：同一就诊日期的多张化验单自动规整在同一份复查档案中，并在档案内按单据分栏深度整理\n- 🖼️ 档案大图横向滑动切换：档案详情页全面支持左右滑动手势切图，滑动大图时自动无缝联动切换下方对应的单据与化验指标，全屏画廊同步支持自然滑动手势\n- 🔬 复合键指标精准去重：采用[单据分类+指标名]复合键智能合并，保证不同单据同名指标绝对互不干扰覆盖\n- 💊 超长药品名排版自适应：彻底杜绝长药名挤爆屏幕导致调药按钮失效问题\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T06:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.1.9-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.9/app-release.apk"
+        "name": "chronocare-v1.2.0-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.2.0/app-release.apk"
       }
     ]
   }

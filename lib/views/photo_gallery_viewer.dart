@@ -101,10 +101,22 @@ class _PhotoGalleryViewerState extends State<PhotoGalleryViewer> with SingleTick
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. 核心图片显示区：手势完全由底层独占，彻底杜绝外层手势竞争导致的双指缩放失效
+          // 1. 核心图片显示区：在原倍无放大状态下支持左右滑动手势快速切图，双指放大后自由拖拽
           GestureDetector(
             onDoubleTapDown: _onDoubleTapDown,
             onDoubleTap: _onDoubleTap,
+            onHorizontalDragEnd: (details) {
+              if (_transformController.value == Matrix4.identity() ||
+                  _transformController.value.getMaxScaleOnAxis() <= 1.05) {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! < -160) {
+                    _goToNext();
+                  } else if (details.primaryVelocity! > 160) {
+                    _goToPrevious();
+                  }
+                }
+              }
+            },
             onTap: () {
               setState(() {
                 _showControls = !_showControls;
