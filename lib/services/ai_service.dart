@@ -52,6 +52,12 @@ class AiService {
     final prompt = '''
 你是一位资深医疗化验单结构化识别专家。请深度分析这张检查单/化验单图片，并提取结构化 JSON 数据。
 
+【🚨 检验指标 100% 全量提取硬性规则（零遗漏铁律）】：
+1. 必须逐行提取化验单上的【全部指标】，严禁遗漏任何一项检验指标！无论该指标是正常、偏高、偏低、异常、阳性还是阴性，均必须完整提取；
+2. 绝对严禁只提取异常指标！绝对严禁合并或省略任何指标！
+3. 多栏全表格完整扫描：化验单极其常见左右双栏或多栏排版（例如左侧第 1-15 项、右侧第 16-30 项），必须完整扫描化验单的每一栏每一行，从第一项到最后一项全量完整录入！
+4. 阴性与定性指标全量保留：如尿常规中的尿蛋白(阴性)、尿糖(-)、潜血(-)等必须全部提取为完整项！
+
 【🚨 核心栏目归类硬性规则（绝对禁止拆分过细）】：
 1. 一张化验单必须且只能提取为一个统一的顶级单据大类名称（category），例如："血常规"、"血液生化全项"、"肝肾功能"、"尿液分析"、"凝血功能"、"甲状腺功能"、"超声影像报告" 等。
 2. 严禁把同一张化验单上的指标拆分成多个不同的小栏目！同一张单据上的所有检测指标（如生化单上的白蛋白、转氨酶、肌酐、尿酸、血糖、血脂）其 category 必须全部统一命名为该整张化验单的顶级大类名称！
@@ -104,6 +110,7 @@ class AiService {
       "generationConfig": {
         "response_mime_type": "application/json",
         "temperature": 0.1,
+        "maxOutputTokens": 8192,
       }
     };
 
@@ -270,6 +277,187 @@ $medsSummary
     } catch (e) {
       throw Exception('解析化验单 JSON 失败: $e\n原始返回: $jsonString');
     }
+  }
+
+  /// 通过 AI 将 OCR 识别出的文本深度整理为结构化化验单记录，保证 100% 全量提取检验指标
+  Future<AiAnalysisResult> analyzeOcrTextWithAi({
+    required String ocrText,
+    required AppSettings settings,
+    String? imagePath,
+  }) async {
+    final cleanText = ocrText.trim();
+    if (cleanText.isEmpty) {
+      return AiAnalysisResult(
+        hospital: '',
+        department: '',
+        doctorName: '',
+        category: '常规化验',
+        doctorAdvice: '',
+        items: [],
+        medicationChanges: [],
+        rawResponse: '',
+      );
+    }
+
+    final apiKey = settings.geminiApiKey.isNotEmpty ? settings.geminiApiKey : settings.customApiKey;
+
+    if (apiKey.isEmpty) {
+      // 离线/未配 Key 本地医疗正则全量提取器兜底
+      return _parseOcrTextLocally(cleanText, imagePath ?? '');
+    }
+
+    final prompt = '''
+你是一位资深医疗化验单结构化识别专家。以下是从化验单或报告单图片中通过 OCR 提取的原始文本。
+请深度分析这些文本，将其中包含的所有就诊信息与检测指标【100%全量完整】提取并整理为结构化 JSON 数据。
+
+【🚨 检验指标 100% 全量提取硬性规则（零遗漏铁律）】：
+1. 必须逐行提取文本中出现的所有检测指标，无论其结果是正常、偏高、偏低、阳性还是阴性，绝不能遗漏任何一项！
+2. 绝对严禁只提取异常指标！绝不合并或省略任何指标！
+3. 开单日期：第一优先级提取【开单日期/采样日期/就诊日期】，格式 YYYY-MM-DD。
+4. 化验单大类名称（category）：根据指标内容准确归类，如"血常规"、"尿常规"、"血液生化全套"、"肝肾功能"、"凝血功能"、"甲状腺功能"等。
+5. 状态判断：normal(正常) | high(偏高) | low(偏低) | abnormal(异常/阳性)。
+
+请严格返回如下 JSON 格式（不要输出 markdown 代码块外的内容）：
+{
+  "checkDate": "YYYY-MM-DD",
+  "hospital": "医院名称",
+  "department": "科室",
+  "doctorName": "开单医生",
+  "category": "化验单统一大类名称(如:血常规/生化全套/尿常规)",
+  "doctorAdvice": "医生诊断结论、医嘱或临床意见",
+  "items": [
+    {
+      "itemName": "指标名称(如: 白细胞计数)",
+      "value": "检测值(如: 6.5)",
+      "unit": "单位(如: 10^9/L)",
+      "referenceRange": "参考区间(如: 3.5-9.5)",
+      "status": "normal | high | low | abnormal",
+      "category": "大类名称",
+      "notes": "备注"
+    }
+  ],
+  "medicationChanges": []
+}
+
+OCR 原始文本如下：
+$cleanText
+''';
+
+    try {
+      final model = settings.geminiModel.isNotEmpty ? settings.geminiModel : 'gemini-3.7-flash';
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+      );
+
+      final requestBody = {
+        "contents": [
+          {
+            "parts": [{"text": prompt}]
+          }
+        ],
+        "generationConfig": {
+          "response_mime_type": "application/json",
+          "temperature": 0.1,
+          "maxOutputTokens": 8192,
+        }
+      };
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 35));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final candidates = data['candidates'] as List?;
+        if (candidates != null && candidates.isNotEmpty) {
+          final resText = candidates[0]['content']['parts'][0]['text']?.toString() ?? '';
+          final parsed = _parseJsonResponse(resText, imagePath ?? '');
+          if (parsed.items.isNotEmpty) return parsed;
+        }
+      }
+    } catch (_) {}
+
+    return _parseOcrTextLocally(cleanText, imagePath ?? '');
+  }
+
+  /// 本地全量检验指标解析兜底器 (当未配 Key 或网络异常时保障 100% 提取出指标)
+  AiAnalysisResult _parseOcrTextLocally(String text, String imagePath) {
+    final lines = text.split(RegExp(r'[\r\n]+')).map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final List<CheckItem> items = [];
+    String hospital = '';
+    String category = '常规检验报告';
+    DateTime? checkDate;
+
+    // 猜测医院与单据名称
+    for (var line in lines) {
+      if (hospital.isEmpty && (line.contains('医院') || line.contains('妇幼') || line.contains('中心'))) {
+        hospital = line;
+      }
+      if (category == '常规检验报告') {
+        if (line.contains('血常规') || line.contains('血细胞')) category = '血常规';
+        else if (line.contains('生化') || line.contains('肝功') || line.contains('肾功')) category = '血液生化';
+        else if (line.contains('尿常规') || line.contains('尿液')) category = '尿常规';
+        else if (line.contains('凝血')) category = '凝血功能';
+        else if (line.contains('甲状腺') || line.contains('甲功')) category = '甲状腺功能';
+      }
+      if (checkDate == null) {
+        final dateMatch = RegExp(r'(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})').firstMatch(line);
+        if (dateMatch != null) {
+          final y = int.tryParse(dateMatch.group(1)!);
+          final m = int.tryParse(dateMatch.group(2)!);
+          final d = int.tryParse(dateMatch.group(3)!);
+          if (y != null && m != null && d != null) {
+            checkDate = DateTime(y, m, d);
+          }
+        }
+      }
+    }
+
+    // 逐行匹配指标
+    for (var line in lines) {
+      // 常见格式: 白细胞计数 WBC 6.20 10^9/L 3.50-9.50 或 尿蛋白 阴性 (-)
+      final valMatch = RegExp(r'([\u4e00-\u9fa5A-Za-z0-9\(\)\（\）\+]+)\s+([0-9\.]+|阴性|阳性|\+|\-|\+\-)\s*([↑↓HLhl])?\s*([a-zA-Z\%\^\/\*0-9\u4e00-\u9fa5]+)?\s*([0-9\.\-\~\～\<\>]+)?').firstMatch(line);
+
+      if (valMatch != null) {
+        final name = valMatch.group(1)!.trim();
+        final val = valMatch.group(2)!.trim();
+        final arrow = valMatch.group(3)?.trim() ?? '';
+        final unit = valMatch.group(4)?.trim() ?? '';
+        final ref = valMatch.group(5)?.trim() ?? '';
+
+        if (name.length >= 2 && !name.contains('姓名') && !name.contains('年龄') && !name.contains('科室') && !name.contains('日期') && !name.contains('报告') && !name.contains('审核')) {
+          String status = 'normal';
+          if (arrow == '↑' || arrow == 'H' || arrow == 'h') status = 'high';
+          else if (arrow == '↓' || arrow == 'L' || arrow == 'l') status = 'low';
+          else if (val == '阳性' || val == '+' || val == '+-') status = 'abnormal';
+
+          items.add(CheckItem(
+            id: DateTime.now().microsecondsSinceEpoch.toString() + '_' + items.length.toString(),
+            itemName: name,
+            value: val,
+            unit: unit,
+            referenceRange: ref,
+            status: status,
+            category: category,
+            sourceImagePath: imagePath,
+          ));
+        }
+      }
+    }
+
+    return AiAnalysisResult(
+      checkDate: checkDate ?? DateTime.now(),
+      hospital: hospital,
+      department: '',
+      doctorName: '',
+      category: category,
+      doctorAdvice: '',
+      items: items,
+      medicationChanges: [],
+      rawResponse: text,
+    );
   }
 
   /// 通过 AI 解析用户自由输入的文本（或离线降级正则解析），提取结构化药物存量与每日消耗

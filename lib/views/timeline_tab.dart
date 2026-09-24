@@ -7,8 +7,15 @@ import '../models/record.dart';
 import 'record_detail_screen.dart';
 import 'record_edit_screen.dart';
 
-class TimelineTab extends StatelessWidget {
+class TimelineTab extends StatefulWidget {
   const TimelineTab({super.key});
+
+  @override
+  State<TimelineTab> createState() => _TimelineTabState();
+}
+
+class _TimelineTabState extends State<TimelineTab> {
+  final Set<String> _expandedRecordIds = {};
 
   @override
   Widget build(BuildContext context) {
@@ -149,38 +156,135 @@ class TimelineTab extends StatelessWidget {
                   ),
                   Divider(height: 18, color: isDark ? const Color(0xFF334155) : null),
 
-                  // 关键指标摘要与异常项胶囊
+                  // 检验指标展示 (支持全量展开与异常指标优先高亮，绝不隐匿指标)
                   if (record.items.isNotEmpty) ...[
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: record.items.take(4).map((item) {
-                        final isAbnormal = item.status != 'normal';
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isAbnormal
-                                ? (isDark ? const Color(0xFF881337).withOpacity(0.4) : Colors.red.shade50)
-                                : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.4) : Colors.blue.shade50.withOpacity(0.5)),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: isAbnormal
-                                  ? (isDark ? const Color(0xFFF43F5E) : Colors.red.shade200)
-                                  : (isDark ? const Color(0xFF38BDF8) : Colors.blue.shade100),
+                    Builder(
+                      builder: (context) {
+                        final isExpanded = _expandedRecordIds.contains(record.id);
+                        final abnormalItems = record.items.where((i) => i.status != 'normal').toList();
+                        final normalItems = record.items.where((i) => i.status == 'normal').toList();
+
+                        // 未展开时优先展示所有异常项 + 部分正常项 (最多 8 项)
+                        final List<dynamic> displayItems = isExpanded
+                            ? record.items
+                            : (abnormalItems.length >= 8
+                                ? abnormalItems.take(8).toList()
+                                : [...abnormalItems, ...normalItems.take(8 - abnormalItems.length)]);
+
+                        final hasMore = record.items.length > displayItems.length;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  '📊 检验指标 (${record.items.length}项)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (abnormalItems.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '${abnormalItems.length}项异常',
+                                      style: const TextStyle(fontSize: 10, color: Color(0xFFF43F5E), fontWeight: FontWeight.bold),
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      '全部正常',
+                                      style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                          child: Text(
-                            '${item.itemName}: ${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : "↓") : ""}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isAbnormal
-                                  ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
-                                  : (isDark ? const Color(0xFFBAE6FD) : Colors.black87),
-                              fontWeight: isAbnormal ? FontWeight.w600 : FontWeight.normal,
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                ...displayItems.map((item) {
+                                  final isAbnormal = item.status != 'normal';
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isAbnormal
+                                          ? (isDark ? const Color(0xFF881337).withOpacity(0.4) : Colors.red.shade50)
+                                          : (isDark ? const Color(0xFF1E3A5F).withOpacity(0.4) : Colors.blue.shade50.withOpacity(0.5)),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: isAbnormal
+                                            ? (isDark ? const Color(0xFFF43F5E) : Colors.red.shade200)
+                                            : (isDark ? const Color(0xFF38BDF8) : Colors.blue.shade100),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${item.itemName}: ${item.value} ${item.unit} ${isAbnormal ? (item.status == "high" ? "↑" : (item.status == "low" ? "↓" : "异常")) : ""}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isAbnormal
+                                            ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                            : (isDark ? const Color(0xFFBAE6FD) : Colors.black87),
+                                        fontWeight: isAbnormal ? FontWeight.w600 : FontWeight.normal,
+                                      ),
+                                    ),
+                                  );
+                                }),
+                                if (hasMore && !isExpanded)
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() => _expandedRecordIds.add(record.id));
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blueAccent.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                                      ),
+                                      child: Text(
+                                        '+ 展开其余 ${record.items.length - displayItems.length} 项指标 ▾',
+                                        style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                if (isExpanded && record.items.length > 8)
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() => _expandedRecordIds.remove(record.id));
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        '收起部分指标 ▴',
+                                        style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
+                          ],
                         );
-                      }).toList(),
+                      },
                     ),
                     const SizedBox(height: 8),
                   ],
@@ -204,7 +308,7 @@ class TimelineTab extends StatelessWidget {
                     ),
                   ],
 
-                  // 底部操作区（已合并图片角标与快速编辑）
+                  // 底部操作区（化验单原图角标与快速编辑）
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -214,7 +318,7 @@ class TimelineTab extends StatelessWidget {
                             const Icon(Icons.image, size: 13, color: Color(0xFF38BDF8)),
                             const SizedBox(width: 4),
                             Text(
-                              '${record.imagePaths.length} 张化验单 (已合并)',
+                              '${record.imagePaths.length} 张化验单原图',
                               style: const TextStyle(fontSize: 11, color: Color(0xFF38BDF8)),
                             ),
                           ],

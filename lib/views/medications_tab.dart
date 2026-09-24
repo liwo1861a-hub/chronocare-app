@@ -382,11 +382,16 @@ class _MedicationsTabState extends State<MedicationsTab> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        drug.medicineName,
-                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                      Expanded(
+                                        child: Text(
+                                          drug.medicineName,
+                                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                      if (drug.diseaseName.isNotEmpty)
+                                      if (drug.diseaseName.isNotEmpty) ...[
+                                        const SizedBox(width: 6),
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
@@ -398,6 +403,7 @@ class _MedicationsTabState extends State<MedicationsTab> {
                                             style: const TextStyle(fontSize: 10, color: Colors.blueAccent),
                                           ),
                                         ),
+                                      ],
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -528,42 +534,52 @@ class _MedicationsTabState extends State<MedicationsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 顶部：药品名称 + 状态徽章 + 快捷新增调药按钮
+            // 顶部：药品名称 + 状态徽章 + 快捷新增调药按钮 (支持超长药名自动换行与弹性自适应，绝不挤占调药按钮)
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: isStopped ? Colors.grey.withOpacity(0.2) : Colors.blueAccent.withOpacity(0.15),
-                      child: Icon(
-                        Icons.medication,
-                        size: 20,
-                        color: isStopped ? Colors.grey : Colors.blueAccent,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          drug.medicineName,
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: isStopped ? Colors.grey.withOpacity(0.2) : Colors.blueAccent.withOpacity(0.15),
+                        child: Icon(
+                          Icons.medication,
+                          size: 20,
+                          color: isStopped ? Colors.grey : Colors.blueAccent,
                         ),
-                        if (drug.diseaseName.isNotEmpty)
-                          Text(
-                            '关联档案: ${drug.diseaseName}',
-                            style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                          ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              drug.medicineName,
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (drug.diseaseName.isNotEmpty)
+                              Text(
+                                '关联档案: ${drug.diseaseName}',
+                                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
                         color: isStopped ? Colors.red.withOpacity(0.12) : Colors.green.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),

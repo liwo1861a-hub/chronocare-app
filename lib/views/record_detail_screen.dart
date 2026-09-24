@@ -49,20 +49,24 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     final disease = prov.getDiseaseById(record.diseaseId);
 
-    // 1. 按检查项目大类/单据分类进行分栏目聚合 (以单张化验单的大类为基准，避免碎片化过细拆分)
+    // 1. 按检查项目大类/单据分类进行分栏目聚合 (支持“全部指标”与单据分栏查看)
     final Map<String, List<CheckItem>> categorizedItems = {};
     for (var item in record.items) {
       final cat = item.category.trim().isNotEmpty ? item.category.trim() : '常规检验报告';
       categorizedItems.putIfAbsent(cat, () => []).add(item);
     }
 
-    final categoryNames = categorizedItems.keys.toList();
+    final categoryNames = [
+      if (categorizedItems.length > 1) '全部指标',
+      ...categorizedItems.keys,
+    ];
+
     if (_selectedCategoryIndex >= categoryNames.length && categoryNames.isNotEmpty) {
-      _selectedCategoryIndex = categoryNames.length - 1;
+      _selectedCategoryIndex = 0;
     }
 
     final currentCategory = categoryNames.isNotEmpty ? categoryNames[_selectedCategoryIndex] : '常规化验';
-    final currentItems = categorizedItems[currentCategory] ?? [];
+    final currentItems = (currentCategory == '全部指标') ? record.items : (categorizedItems[currentCategory] ?? []);
 
     // 2. 构建图片路径 -> 对应栏目名称映射 (用于左右滑动无缝联动切换)
     final Map<String, String> imageCategoryMap = {};
@@ -79,9 +83,13 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
     // 3. 收集当前栏目对应的化验单图片
     final List<String> currentCategoryImages = [];
-    for (var it in currentItems) {
-      if (it.sourceImagePath.isNotEmpty && !currentCategoryImages.contains(it.sourceImagePath)) {
-        currentCategoryImages.add(it.sourceImagePath);
+    if (currentCategory == '全部指标') {
+      currentCategoryImages.addAll(record.imagePaths);
+    } else {
+      for (var it in currentItems) {
+        if (it.sourceImagePath.isNotEmpty && !currentCategoryImages.contains(it.sourceImagePath)) {
+          currentCategoryImages.add(it.sourceImagePath);
+        }
       }
     }
     if (currentCategoryImages.isEmpty && record.imagePaths.isNotEmpty) {
@@ -240,8 +248,10 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   itemBuilder: (context, idx) {
                     final catName = categoryNames[idx];
                     final isSelected = idx == _selectedCategoryIndex;
-                    final count = categorizedItems[catName]?.length ?? 0;
-                    final hasAbnormal = categorizedItems[catName]?.any((i) => i.status != 'normal') ?? false;
+                    final count = (catName == '全部指标') ? record.items.length : (categorizedItems[catName]?.length ?? 0);
+                    final hasAbnormal = (catName == '全部指标')
+                        ? record.items.any((i) => i.status != 'normal')
+                        : (categorizedItems[catName]?.any((i) => i.status != 'normal') ?? false);
 
                     return GestureDetector(
                       onTap: () {
@@ -347,11 +357,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.drive_file_rename_outline, size: 18, color: Colors.blueAccent),
-                                  tooltip: '重命名此栏目名称',
-                                  onPressed: () => _renameCategoryDialog(context, currentCategory, record, prov),
-                                ),
+                                if (currentCategory != '全部指标')
+                                  IconButton(
+                                    icon: const Icon(Icons.drive_file_rename_outline, size: 18, color: Colors.blueAccent),
+                                    tooltip: '重命名此栏目名称',
+                                    onPressed: () => _renameCategoryDialog(context, currentCategory, record, prov),
+                                  ),
                               ],
                             ),
                           ),

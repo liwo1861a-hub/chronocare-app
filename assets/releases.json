@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.1.8",
-    "name": "ChronoCare v1.1.8 独立药箱存量模块与AI文本自动识别入库版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.1.8\n- 📦 独立全新模块【药箱存量与补药预警】：精准记录药品剩余存量、每日消耗并推算可用天数，缺药时自动醒目告警提醒\n- 🤖 AI 存量文本智能提取入库：允许直接粘贴处方小票或随手打字描述，AI 自动提取药品通用名、折算总片数与日消耗，支持导入前微调核对与一键入库\n- 💊 快捷服药打卡与补药：支持一键服药扣减今日用量、一键加量补药，随时手动修改存量与预警天数阈值\n- ⚡ 药物微调录入体系：通用名、单次剂量与服用频次自动根据上一次方案智能载入与步进增减\n- 📋 顶部最新在服药物全景完整总览与一键复制处方清单\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T04:00:00Z",
+    "tag_name": "v1.1.9",
+    "name": "ChronoCare v1.1.9 OCR/AI全量指标提取·独立分图分单建档·药名长文本自适应修复版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.1.9\n- 🔬 修复三种 OCR 与 AI 整理指标遗漏：强化 AI 指标 100% 全量提取铁律（严格禁止只提取异常项，双栏全表格指标逐行扫描），设置 8192 Token 极限防截断，新增本地正则提取兜底\n- 📄 修复 AI 识图多图合并问题：支持每张化验单图片独立分开建档（图片与指标1对1精准对应，绝不粗暴强行挤压合并），与联网 OCR 保持完全一致的分图分单架构\n- 📊 时间轴与详情全量指标展示：解除时间轴前4项限制，支持单据指标一键展开/收起；详情页新增【全部指标】全景视图，杜绝指标隐匿\n- 💊 彻底修复超长药品名排版溢出：优化用药记录卡片标题布局为弹性伸缩自适应，保证【记录调药】按钮永不被挤出屏幕且永久有效\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T05:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.1.8-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.8/app-release.apk"
+        "name": "chronocare-v1.1.9-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.1.9/app-release.apk"
       }
     ]
   }

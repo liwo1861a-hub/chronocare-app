@@ -42,6 +42,7 @@ class BatchImportScreen extends StatefulWidget {
 class _BatchImportScreenState extends State<BatchImportScreen> {
   final List<BatchTaskItem> _tasks = [];
   bool _isProcessing = false;
+  bool _separateRecordsPerImage = true; // 默认每张图片独立分开建档，化验单不强行挤压合并
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +57,10 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           if (_tasks.isNotEmpty && !_isProcessing)
             TextButton.icon(
               icon: const Icon(Icons.done_all, color: Colors.white),
-              label: const Text('按日期合并入库', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              label: Text(
+                _separateRecordsPerImage ? '全部独立入库' : '合并日期入库',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
               onPressed: () => _saveAllCompletedTasks(recordsProv),
             ),
         ],
@@ -92,13 +96,28 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
                       children: [
                         Icon(Icons.auto_awesome, size: 20, color: Colors.purpleAccent),
                         SizedBox(width: 8),
-                        Text('开关 2：OCR 后自动 AI 整理分类', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text('开关 2：自动 AI 深度整理与 100% 全量提取', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                       ],
                     ),
-                    subtitle: const Text('自动调用 Gemini-3.7-flash 提取项目/数值/异常/医嘱并归类', style: TextStyle(fontSize: 12)),
+                    subtitle: const Text('通过 AI 将单据中的所有检测指标逐行全量结构化，绝不遗漏', style: TextStyle(fontSize: 12)),
                     value: settings.batchAutoAiParse,
                     onChanged: (val) {
                       settingsProv.updatePartial(batchAutoAiParse: val);
+                    },
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.collections_bookmark_outlined, size: 20, color: Colors.blueAccent),
+                        SizedBox(width: 8),
+                        Text('开关 3：每张化验单图片独立分开保存', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      ],
+                    ),
+                    subtitle: const Text('推荐开启：保持各张化验单(如血常规/尿常规/生化)独立分开，图片与检验项1对1对应', style: TextStyle(fontSize: 12)),
+                    value: _separateRecordsPerImage,
+                    onChanged: (val) {
+                      setState(() => _separateRecordsPerImage = val);
                     },
                   ),
                 ],
@@ -242,32 +261,36 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
       if (task.status == BatchTaskStatus.completed) continue;
 
       try {
-        if (settings.batchAutoOcr && settings.batchAutoAiParse) {
+        final engine = settings.ocrEngine;
+
+        if (engine == 'gemini_vision') {
+          // 方式 1: Gemini 视觉多模态直出
           setState(() => task.status = BatchTaskStatus.aiParsing);
           final res = await AiService.instance.analyzeImageWithGemini(
             imageFile: task.file,
             settings: settings,
           );
-
-          // 核心绑定：将当次识别出来的所有 items 的 sourceImagePath 绑定为当前图片
-          final categoryName = res.category.isNotEmpty ? res.category : '常规化验';
-          for (var item in res.items) {
-            item.sourceImagePath = task.file.path;
-            if (item.category.isEmpty || item.category == '常规检验') {
-              item.category = categoryName;
-            }
-          }
-
-          task.result = res;
-          task.status = BatchTaskStatus.completed;
-        } else if (settings.batchAutoOcr) {
+          _bindResultToTask(task, res);
+        } else {
+          // 方式 2 & 3: 联网 OCR (ocr_space) 或端侧离线引擎提取文字，再由 AI 深度整理
           setState(() => task.status = BatchTaskStatus.ocring);
           final text = await OcrService.instance.recognizeText(
             imageFile: task.file,
             settings: settings,
           );
           task.ocrText = text;
-          task.status = BatchTaskStatus.completed;
+
+          if (settings.batchAutoAiParse) {
+            setState(() => task.status = BatchTaskStatus.aiParsing);
+            final res = await AiService.instance.analyzeOcrTextWithAi(
+              ocrText: text,
+              settings: settings,
+              imagePath: task.file.path,
+            );
+            _bindResultToTask(task, res);
+          } else {
+            task.status = BatchTaskStatus.completed;
+          }
         }
       } catch (e) {
         task.status = BatchTaskStatus.failed;
@@ -277,6 +300,19 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
     }
 
     setState(() => _isProcessing = false);
+  }
+
+  void _bindResultToTask(BatchTaskItem task, AiAnalysisResult res) {
+    // 核心绑定：将当次识别出来的所有 items 的 sourceImagePath 绑定为当前图片
+    final categoryName = res.category.isNotEmpty ? res.category : '常规化验';
+    for (var item in res.items) {
+      item.sourceImagePath = task.file.path;
+      if (item.category.isEmpty || item.category == '常规检验') {
+        item.category = categoryName;
+      }
+    }
+    task.result = res;
+    task.status = BatchTaskStatus.completed;
   }
 
   void _openTaskEdit(BatchTaskItem task, RecordsProvider recordsProv) {
@@ -313,20 +349,33 @@ class _BatchImportScreenState extends State<BatchImportScreen> {
           hospital: res.hospital,
           department: res.department,
           doctorName: res.doctorName,
-          category: res.category,
+          category: res.category.isNotEmpty ? res.category : '常规化验',
           doctorAdvice: res.doctorAdvice,
-          imagePaths: [task.file.path],
+          imagePaths: [task.file.path], // 每张图片独立绑定当前化验单
           items: res.items,
           medicationChanges: res.medicationChanges,
         );
-        await recordsProv.mergeOrSaveRecordByDate(rec);
+
+        if (_separateRecordsPerImage) {
+          // 独立分开保存每张化验单，与联网 OCR 一样保持图片与单据分开
+          await recordsProv.saveRecord(rec);
+        } else {
+          // 按开单日期合并
+          await recordsProv.mergeOrSaveRecordByDate(rec);
+        }
         processedCount++;
       }
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已自动按开单日期合并入库 $processedCount 份化验单！')),
+        SnackBar(
+          content: Text(
+            _separateRecordsPerImage
+                ? '✅ 已成功将 $processedCount 份化验单独立分开保存入库！'
+                : '✅ 已自动按开单日期合并入库 $processedCount 份化验单！',
+          ),
+        ),
       );
       Navigator.pop(context);
     }
