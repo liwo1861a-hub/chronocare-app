@@ -168,7 +168,10 @@ class CategoriesTab extends StatelessWidget {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => RecordDetailScreen(recordId: lastPoint.recordId),
+                builder: (_) => RecordDetailScreen(
+                  recordId: lastPoint.recordId,
+                  initialCategory: lastPoint.parentCategory,
+                ),
               ),
             );
           }

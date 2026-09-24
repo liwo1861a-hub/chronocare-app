@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.2.2",
-    "name": "ChronoCare v1.2.2 指标走势范围标注·点击数据点直达单据报告单版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.2.2\n- 📈 指标走势全景参考范围展示：在走势图标题栏、图表基准线(上下限参考虚线)及历次明细列表中全方位展示指标参考范围与标准区间\n- 🎯 点击指标直达单据报告单：点击走势图上的任意数据点或明细列表项，可一键直接定位跳转至对应就诊记录的特定检查单据栏目与原图\n- 🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T08:00:00Z",
+    "tag_name": "v1.2.3",
+    "name": "ChronoCare v1.2.3 跨单据同名指标前缀区分·走势图单据级精准归类版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.2.3\n- 🏷️ 跨单据同名指标前缀精准区分：在走势指标中自动区分不同检查单据的同名项目（如自动生成 [血常规] 白细胞 与 [尿常规] 白细胞），彻底解决血尿常规同名指标混淆问题\n- 📈 指标走势全景参考范围展示：在走势图标题栏、图表基准线(上下限参考虚线)及历次明细列表中全方位展示指标参考范围与标准区间\n- 🎯 点击指标直达单据报告单：点击走势图上的任意数据点或明细列表项，可一键直接定位跳转至对应就诊记录的特定检查单据栏目与原图\n- 🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T09:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.2.2-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.2.2/app-release.apk"
+        "name": "chronocare-v1.2.3-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.2.3/app-release.apk"
       }
     ]
   }

@@ -391,12 +391,31 @@ class RecordsProvider with ChangeNotifier {
   }
 
   List<String> getAllItemNames() {
-    final Set<String> names = {};
+    // 1. 统计每个 itemName 在所有复查单据中出现的栏目分类
+    final Map<String, Set<String>> nameToCategories = {};
     for (var r in _records) {
       for (var it in r.items) {
-        if (it.itemName.trim().isNotEmpty) {
-          names.add(it.itemName.trim());
+        final name = it.itemName.trim();
+        if (name.isEmpty) continue;
+        final cat = it.category.trim().isNotEmpty
+            ? it.category.trim()
+            : (r.category.trim().isNotEmpty ? r.category.trim() : '常规检验');
+        nameToCategories.putIfAbsent(name, () => {}).add(cat);
+      }
+    }
+
+    final Set<String> names = {};
+    for (var entry in nameToCategories.entries) {
+      final name = entry.key;
+      final cats = entry.value;
+      if (cats.length > 1) {
+        // 🌟 核心：不同单据栏目的同名检查项（如尿常规白细胞 vs 血常规白细胞），加单据前缀区分开！
+        for (var cat in cats) {
+          names.add('[$cat] $name');
         }
+      } else {
+        // 独有指标：未跨栏目重名，保持原指标名称
+        names.add(name);
       }
     }
     return names.toList()..sort();
@@ -410,59 +429,79 @@ class RecordsProvider with ChangeNotifier {
 
   List<MetricHistoryPoint> getMetricHistory(String itemName) {
     final List<MetricHistoryPoint> rawPoints = [];
-    final target = itemName.trim().toLowerCase();
+    final target = itemName.trim();
+
+    // 🌟 解析单据前缀：例如 [血常规] 白细胞 或 [尿常规] 白细胞
+    String? filterCategory;
+    String cleanItemName = target;
+    if (target.startsWith('[') && target.contains(']')) {
+      final closeIdx = target.indexOf(']');
+      filterCategory = target.substring(1, closeIdx).trim().toLowerCase();
+      cleanItemName = target.substring(closeIdx + 1).trim();
+    }
+    final targetNameLower = cleanItemName.toLowerCase();
 
     for (var r in _records) {
       final dis = getDiseaseById(r.diseaseId);
       for (var it in r.items) {
-        if (it.itemName.trim().toLowerCase() == target) {
-          double? val = it.numericValue;
-          bool isQualitative = false;
+        if (it.itemName.trim().toLowerCase() != targetNameLower) continue;
 
-          if (val == null) {
-            final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(it.value);
-            if (match != null) {
-              val = double.tryParse(match.group(0)!);
-            }
+        // 若指定了单据分类前缀，则严格匹配所属单据分类，彻底区分不同报告单同名指标
+        if (filterCategory != null && filterCategory.isNotEmpty) {
+          final itemCat = (it.category.trim().isNotEmpty
+              ? it.category.trim()
+              : (r.category.trim().isNotEmpty ? r.category.trim() : '常规检验')).toLowerCase();
+          if (itemCat != filterCategory && !itemCat.contains(filterCategory) && !filterCategory.contains(itemCat)) {
+            continue;
           }
-
-          if (val == null) {
-            isQualitative = true;
-            final vStr = it.value.trim().toLowerCase();
-            if (vStr.contains('阴') || vStr.contains('(-)') || vStr == '-' || vStr.contains('未见') || vStr.contains('正常')) {
-              val = 0.0;
-            } else if (vStr.contains('±') || vStr.contains('弱阳') || vStr.contains('可疑')) {
-              val = 0.5;
-            } else if (vStr.contains('4+') || vStr.contains('++++')) {
-              val = 4.0;
-            } else if (vStr.contains('3+') || vStr.contains('+++')) {
-              val = 3.0;
-            } else if (vStr.contains('2+') || vStr.contains('++')) {
-              val = 2.0;
-            } else if (vStr.contains('1+') || vStr.contains('+') || vStr.contains('阳') || vStr.contains('异常')) {
-              val = 1.0;
-            } else {
-              val = 0.0;
-            }
-          }
-
-          rawPoints.add(MetricHistoryPoint(
-            date: r.checkDate,
-            hospital: r.hospital.isNotEmpty ? r.hospital : '未注明医院',
-            value: val,
-            valueStr: it.value.isNotEmpty ? it.value : '未注明',
-            unit: it.unit,
-            referenceRange: it.referenceRange,
-            refMin: it.refMin,
-            refMax: it.refMax,
-            status: it.status,
-            notes: it.notes,
-            recordId: r.id,
-            parentCategory: it.category.isNotEmpty ? it.category : (r.category.isNotEmpty ? r.category : '常规化验单'),
-            diseaseName: dis?.name ?? '',
-            isQualitative: isQualitative,
-          ));
         }
+
+        double? val = it.numericValue;
+        bool isQualitative = false;
+
+        if (val == null) {
+          final match = RegExp(r'[-+]?[0-9]*\.?[0-9]+').firstMatch(it.value);
+          if (match != null) {
+            val = double.tryParse(match.group(0)!);
+          }
+        }
+
+        if (val == null) {
+          isQualitative = true;
+          final vStr = it.value.trim().toLowerCase();
+          if (vStr.contains('阴') || vStr.contains('(-)') || vStr == '-' || vStr.contains('未见') || vStr.contains('正常')) {
+            val = 0.0;
+          } else if (vStr.contains('±') || vStr.contains('弱阳') || vStr.contains('可疑')) {
+            val = 0.5;
+          } else if (vStr.contains('4+') || vStr.contains('++++')) {
+            val = 4.0;
+          } else if (vStr.contains('3+') || vStr.contains('+++')) {
+            val = 3.0;
+          } else if (vStr.contains('2+') || vStr.contains('++')) {
+            val = 2.0;
+          } else if (vStr.contains('1+') || vStr.contains('+') || vStr.contains('阳') || vStr.contains('异常')) {
+            val = 1.0;
+          } else {
+            val = 0.0;
+          }
+        }
+
+        rawPoints.add(MetricHistoryPoint(
+          date: r.checkDate,
+          hospital: r.hospital.isNotEmpty ? r.hospital : '未注明医院',
+          value: val,
+          valueStr: it.value.isNotEmpty ? it.value : '未注明',
+          unit: it.unit,
+          referenceRange: it.referenceRange,
+          refMin: it.refMin,
+          refMax: it.refMax,
+          status: it.status,
+          notes: it.notes,
+          recordId: r.id,
+          parentCategory: it.category.isNotEmpty ? it.category : (r.category.isNotEmpty ? r.category : '常规化验单'),
+          diseaseName: dis?.name ?? '',
+          isQualitative: isQualitative,
+        ));
       }
     }
 
