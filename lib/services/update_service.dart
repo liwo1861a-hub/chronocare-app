@@ -25,8 +25,8 @@ class UpdateService {
   static final UpdateService instance = UpdateService._();
   UpdateService._();
 
-  static const String currentVersion = '1.2.0';
-  static const int currentBuildNumber = 21;
+  static const String currentVersion = '1.2.1';
+  static const int currentBuildNumber = 22;
 
   static const String repoOwner = 'liwo1861a-hub';
   static const String repoName = 'chronocare-app';
