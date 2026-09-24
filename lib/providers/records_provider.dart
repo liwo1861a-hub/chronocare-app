@@ -15,10 +15,13 @@ class MetricHistoryPoint {
   final double value;
   final String valueStr;
   final String unit;
+  final String referenceRange; // 参考范围，如 "3.5-9.5" 或 "阴性"
+  final double? refMin; // 参考下限
+  final double? refMax; // 参考上限
   final String status;
   final String notes;
   final String recordId;
-  final String parentCategory;
+  final String parentCategory; // 对应的检查栏目/大报告单名称
   final String diseaseName;
   final bool isQualitative;
   final String qualitativeChange;
@@ -29,6 +32,9 @@ class MetricHistoryPoint {
     required this.value,
     required this.valueStr,
     required this.unit,
+    this.referenceRange = '',
+    this.refMin,
+    this.refMax,
     required this.status,
     required this.notes,
     required this.recordId,
@@ -446,6 +452,9 @@ class RecordsProvider with ChangeNotifier {
             value: val,
             valueStr: it.value.isNotEmpty ? it.value : '未注明',
             unit: it.unit,
+            referenceRange: it.referenceRange,
+            refMin: it.refMin,
+            refMax: it.refMax,
             status: it.status,
             notes: it.notes,
             recordId: r.id,
@@ -482,6 +491,9 @@ class RecordsProvider with ChangeNotifier {
         value: cur.value,
         valueStr: cur.valueStr,
         unit: cur.unit,
+        referenceRange: cur.referenceRange,
+        refMin: cur.refMin,
+        refMax: cur.refMax,
         status: cur.status,
         notes: cur.notes,
         recordId: cur.recordId,

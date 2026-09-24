@@ -13,8 +13,13 @@ import 'photo_gallery_viewer.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String recordId;
+  final String? initialCategory; // 允许从指标走势等外部页面直接定位跳转到对应的检查单据栏目
 
-  const RecordDetailScreen({super.key, required this.recordId});
+  const RecordDetailScreen({
+    super.key,
+    required this.recordId,
+    this.initialCategory,
+  });
 
   @override
   State<RecordDetailScreen> createState() => _RecordDetailScreenState();
@@ -26,6 +31,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
   bool _showOnlyCurrentCategoryImages = true;
   late PageController _imagePageController;
   int _currentImageIndex = 0;
+  bool _hasAppliedInitialCategory = false;
 
   @override
   void initState() {
@@ -75,6 +81,16 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       ...categorizedItems.keys,
     ];
 
+    // 如果传入了初始检查栏目，则优先定位选中该栏目
+    if (!_hasAppliedInitialCategory && widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
+      final targetCat = widget.initialCategory!.trim();
+      final catIdx = categoryNames.indexOf(targetCat);
+      if (catIdx >= 0) {
+        _selectedCategoryIndex = catIdx;
+      }
+      _hasAppliedInitialCategory = true;
+    }
+
     if (_selectedCategoryIndex >= categoryNames.length && categoryNames.isNotEmpty) {
       _selectedCategoryIndex = 0;
     }
@@ -92,6 +108,20 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     for (var imgPath in record.imagePaths) {
       if (!imageCategoryMap.containsKey(imgPath)) {
         imageCategoryMap[imgPath] = currentCategory;
+      }
+    }
+
+    // 若由外部跳转指定了检查单据栏目，首次构建后自动将滑动大图切换至对应单据图片
+    if (_hasAppliedInitialCategory && widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
+      final targetCat = widget.initialCategory!.trim();
+      final targetImgIdx = record.imagePaths.indexWhere((p) => imageCategoryMap[p] == targetCat);
+      if (targetImgIdx >= 0 && _currentImageIndex != targetImgIdx) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _imagePageController.hasClients) {
+            _imagePageController.jumpToPage(targetImgIdx);
+            setState(() => _currentImageIndex = targetImgIdx);
+          }
+        });
       }
     }
 

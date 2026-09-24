@@ -1,12 +1,13 @@
 {
-  "version": "1.2.1",
-  "build_number": 22,
+  "version": "1.2.2",
+  "build_number": 23,
   "release_date": "2025-05-19",
   "app_name": "脉络健康 (ChronoCare)",
   "package_name": "com.liwo.chronocare",
   "changelog": [
-    "🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移，缩放响应重回丝滑",
-    "📑 档案内大图与全屏清晰分工：档案详情页专职负责大图横向滑动切单与双向栏目联动，全屏画廊专职提供高倍率无冲突双指缩放与大面积平移审查",
+    "📈 指标走势全景参考范围展示：在走势图标题栏、图表基准线(上下限参考虚线)及历次明细列表中全方位展示指标参考范围与标准区间",
+    "🎯 点击指标直达单据报告单：点击走势图上的任意数据点或明细列表项，可一键直接定位跳转至对应就诊记录的特定检查单据栏目与原图",
+    "🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移",
     "🔒 永久固化 Release 签名支持 App 内无缝更新"
   ],
   "download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/latest"

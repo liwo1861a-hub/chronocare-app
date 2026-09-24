@@ -51,6 +51,25 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     final history = prov.getMetricHistory(_selectedItemName!);
     final bool isQualitativeProject = history.any((h) => h.isQualitative);
 
+    // 提取最新的参考范围与上下限 (用于走势图基准线与参考区间展示)
+    String standardRefRange = '';
+    double? activeRefMin;
+    double? activeRefMax;
+    for (var h in history.reversed) {
+      if (standardRefRange.isEmpty && h.referenceRange.trim().isNotEmpty) {
+        standardRefRange = h.referenceRange.trim();
+      }
+      if (activeRefMin == null && h.refMin != null) {
+        activeRefMin = h.refMin;
+      }
+      if (activeRefMax == null && h.refMax != null) {
+        activeRefMax = h.refMax;
+      }
+      if (standardRefRange.isNotEmpty && (activeRefMin != null || activeRefMax != null)) {
+        break;
+      }
+    }
+
     return Scaffold(
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(14),
@@ -153,44 +172,82 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
+                          Expanded(
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: isQualitativeProject ? Colors.teal : Colors.blueAccent,
+                                  child: Icon(isQualitativeProject ? Icons.compare_arrows : Icons.show_chart, size: 16, color: Colors.white),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    isQualitativeProject ? '$_selectedItemName 定性演变对比' : '$_selectedItemName 历史走势图',
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              CircleAvatar(
-                                radius: 14,
-                                backgroundColor: isQualitativeProject ? Colors.teal : Colors.blueAccent,
-                                child: Icon(isQualitativeProject ? Icons.compare_arrows : Icons.show_chart, size: 16, color: Colors.white),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                isQualitativeProject ? '$_selectedItemName 定性演变对比' : '$_selectedItemName 历史走势图',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              if (standardRefRange.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.35)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.verified_outlined, size: 12, color: Color(0xFF10B981)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '参考: $standardRefRange',
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isQualitativeProject ? Colors.teal.withOpacity(0.15) : Colors.blue.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  isQualitativeProject ? '定性/等级' : '单位: ${history.first.unit.isNotEmpty ? history.first.unit : "数值"}',
+                                  style: TextStyle(fontSize: 11, color: isQualitativeProject ? Colors.teal : Colors.blueAccent, fontWeight: FontWeight.w600),
+                                ),
                               ),
                             ],
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isQualitativeProject ? Colors.teal.withOpacity(0.15) : Colors.blue.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.touch_app_outlined, size: 13, color: Colors.blue.shade300),
+                          const SizedBox(width: 4),
+                          Expanded(
                             child: Text(
-                              isQualitativeProject ? '定性/等级项目' : '单位: ${history.first.unit.isNotEmpty ? history.first.unit : "数值"}',
-                              style: TextStyle(fontSize: 11, color: isQualitativeProject ? Colors.teal : Colors.blueAccent, fontWeight: FontWeight.w600),
+                              '点击图表数据点或下方明细列表，可直接跳转并定位至对应的检查报告单',
+                              style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        isQualitativeProject
-                            ? '已为您按历次复查日期自动比对阴阳性与等级转归 (点击下方列表可定位大报告单)'
-                            : '共包含 ${history.length} 次复查测定数据 (点击数据点或下方列表可定位大报告单)',
-                        style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
-                      ),
                       const SizedBox(height: 24),
                       SizedBox(
                         height: 220,
-                        child: _buildLineChart(history, isDark, isQualitativeProject),
+                        child: _buildLineChart(context, history, isDark, isQualitativeProject, activeRefMin, activeRefMax),
                       ),
                     ],
                   ),
@@ -243,13 +300,16 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                     }
 
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       onTap: () {
-                        // 一键反向跳转并定位到该复查档案与大报告单栏目
+                        // 🎯 核心跳转：点击指标直接跳转对应的检查单据报告单
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => RecordDetailScreen(recordId: item.recordId),
+                            builder: (_) => RecordDetailScreen(
+                              recordId: item.recordId,
+                              initialCategory: item.parentCategory,
+                            ),
                           ),
                         );
                       },
@@ -275,63 +335,95 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
                         ],
                       ),
                       subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Row(
+                        padding: const EdgeInsets.only(top: 5.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 醒目标注其存在的大项目/大报告单名称
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.description, size: 11, color: Colors.blueAccent),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '所属大项目: ${item.parentCategory}',
-                                    style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.w500),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                // 醒目标注其对应的单据报告单
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.blue.withOpacity(0.35)),
                                   ),
-                                ],
-                              ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.description_outlined, size: 11, color: Colors.blueAccent),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '单据: ${item.parentCategory}',
+                                        style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // 🎯 重点：显示指标参考范围！
+                                if (item.referenceRange.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: isDark ? const Color(0xFF475569) : Colors.grey.shade300),
+                                    ),
+                                    child: Text(
+                                      '参考: ${item.referenceRange}',
+                                      style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFFCBD5E1) : Colors.black87),
+                                    ),
+                                  )
+                                else if (standardRefRange.isNotEmpty)
+                                  Text(
+                                    '参考: $standardRefRange',
+                                    style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade600),
+                                  ),
+                              ],
                             ),
                             if (item.notes.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text('· ${item.notes}', style: const TextStyle(fontSize: 11, color: Colors.amber), overflow: TextOverflow.ellipsis),
-                              ),
+                              const SizedBox(height: 3),
+                              Text('备注: ${item.notes}', style: const TextStyle(fontSize: 11, color: Colors.amber), overflow: TextOverflow.ellipsis),
                             ],
                           ],
                         ),
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            item.valueStr.isNotEmpty ? '${item.valueStr} ${item.unit}' : '未注明',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: isAbnormal
-                                  ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
-                                  : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
-                            ),
-                          ),
-                          if (diffStr.isNotEmpty)
-                            Text(
-                              diffStr,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: diffStr.contains('+') || diffStr.contains('转阳') || diffStr.contains('加重')
-                                    ? Colors.redAccent
-                                    : (diffStr.contains('转阴') || diffStr.contains('好转') ? Colors.green : Colors.grey),
-                                fontWeight: FontWeight.w600,
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                item.valueStr.isNotEmpty ? '${item.valueStr} ${item.unit}' : '未注明',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isAbnormal
+                                      ? (isDark ? const Color(0xFFFDA4AF) : Colors.red.shade700)
+                                      : (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade800),
+                                ),
                               ),
-                            ),
+                              if (diffStr.isNotEmpty)
+                                Text(
+                                  diffStr,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: diffStr.contains('+') || diffStr.contains('转阳') || diffStr.contains('加重')
+                                        ? Colors.redAccent
+                                        : (diffStr.contains('转阴') || diffStr.contains('好转') ? Colors.green : Colors.grey),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey),
                         ],
                       ),
                     );
@@ -346,7 +438,14 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     );
   }
 
-  Widget _buildLineChart(List<MetricHistoryPoint> history, bool isDark, bool isQualitative) {
+  Widget _buildLineChart(
+    BuildContext context,
+    List<MetricHistoryPoint> history,
+    bool isDark,
+    bool isQualitative,
+    double? activeRefMin,
+    double? activeRefMax,
+  ) {
     if (history.isEmpty) return const SizedBox.shrink();
 
     final spots = <FlSpot>[];
@@ -361,13 +460,21 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
     if (isQualitative) {
       minY = 0;
       maxY = maxY < 3 ? 3 : maxY + 1;
-    } else if (minY == maxY) {
-      minY = minY * 0.8;
-      maxY = maxY * 1.2;
     } else {
-      final pad = (maxY - minY) * 0.15;
-      minY = (minY - pad) > 0 ? (minY - pad) : 0;
-      maxY = maxY + pad;
+      if (activeRefMin != null && activeRefMin < minY) {
+        minY = activeRefMin;
+      }
+      if (activeRefMax != null && activeRefMax > maxY) {
+        maxY = activeRefMax;
+      }
+      if (minY == maxY) {
+        minY = minY * 0.8;
+        maxY = maxY * 1.2;
+      } else {
+        final pad = (maxY - minY) * 0.15;
+        minY = (minY - pad) > 0 ? (minY - pad) : 0;
+        maxY = maxY + pad;
+      }
     }
 
     return LineChart(
@@ -376,6 +483,84 @@ class _MetricsTrendTabState extends State<MetricsTrendTab> {
         maxX: (history.length - 1).toDouble() > 0 ? (history.length - 1).toDouble() : 1,
         minY: minY,
         maxY: maxY,
+        // 🎯 核心：在图表内绘制标准参考范围上下限辅助虚线与标识
+        extraLinesData: ExtraLinesData(
+          horizontalLines: [
+            if (!isQualitative && activeRefMin != null)
+              HorizontalLine(
+                y: activeRefMin,
+                color: const Color(0xFF10B981).withOpacity(0.55),
+                strokeWidth: 1.2,
+                dashArray: [5, 4],
+                label: HorizontalLineLabel(
+                  show: true,
+                  alignment: Alignment.topRight,
+                  padding: const EdgeInsets.only(right: 6, bottom: 2),
+                  style: const TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.bold),
+                  labelResolver: (_) => '参考下限 $activeRefMin',
+                ),
+              ),
+            if (!isQualitative && activeRefMax != null)
+              HorizontalLine(
+                y: activeRefMax,
+                color: const Color(0xFF10B981).withOpacity(0.55),
+                strokeWidth: 1.2,
+                dashArray: [5, 4],
+                label: HorizontalLineLabel(
+                  show: true,
+                  alignment: Alignment.bottomRight,
+                  padding: const EdgeInsets.only(right: 6, top: 2),
+                  style: const TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.bold),
+                  labelResolver: (_) => '参考上限 $activeRefMax',
+                ),
+              ),
+          ],
+        ),
+        // 🎯 核心：点击图表上的任意数据点，直接跳转定位到对应的检查报告单
+        lineTouchData: LineTouchData(
+          enabled: true,
+          handleBuiltInTouches: true,
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => isDark ? const Color(0xFF1E293B) : Colors.white,
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((spot) {
+                final idx = spot.x.toInt();
+                if (idx < 0 || idx >= history.length) return null;
+                final pt = history[idx];
+                final dateStr = DateFormat('yyyy-MM-dd').format(pt.date);
+                final refStr = pt.referenceRange.isNotEmpty ? '\n参考: ${pt.referenceRange}' : '';
+                return LineTooltipItem(
+                  '$dateStr\n${pt.parentCategory}: ${pt.valueStr} ${pt.unit}$refStr\n[点击跳转报告单 ➔]',
+                  TextStyle(
+                    color: isDark ? Colors.white : Colors.black87,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              }).toList();
+            },
+          ),
+          touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+            if (event is FlTapUpEvent &&
+                touchResponse != null &&
+                touchResponse.lineBarSpots != null &&
+                touchResponse.lineBarSpots!.isNotEmpty) {
+              final spotIdx = touchResponse.lineBarSpots!.first.spotIndex;
+              if (spotIdx >= 0 && spotIdx < history.length) {
+                final targetItem = history[spotIdx];
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RecordDetailScreen(
+                      recordId: targetItem.recordId,
+                      initialCategory: targetItem.parentCategory,
+                    ),
+                  ),
+                );
+              }
+            }
+          },
+        ),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,

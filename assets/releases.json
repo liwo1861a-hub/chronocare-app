@@ -1,13 +1,13 @@
 [
   {
-    "tag_name": "v1.2.1",
-    "name": "ChronoCare v1.2.1 彻底恢复双指缩放极速丝滑体验版",
-    "body": "### 慢病复查助手 (ChronoCare) v1.2.1\n- 🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移，缩放响应重回丝滑\n- 📑 档案内大图与全屏清晰分工：档案详情页专职负责大图横向滑动切单与双向栏目联动，全屏画廊专职提供高倍率无冲突双指缩放与大面积平移审查\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
-    "published_at": "2025-05-19T07:00:00Z",
+    "tag_name": "v1.2.2",
+    "name": "ChronoCare v1.2.2 指标走势范围标注·点击数据点直达单据报告单版",
+    "body": "### 慢病复查助手 (ChronoCare) v1.2.2\n- 📈 指标走势全景参考范围展示：在走势图标题栏、图表基准线(上下限参考虚线)及历次明细列表中全方位展示指标参考范围与标准区间\n- 🎯 点击指标直达单据报告单：点击走势图上的任意数据点或明细列表项，可一键直接定位跳转至对应就诊记录的特定检查单据栏目与原图\n- 🔍 彻底修复双指缩放体验：剔除全屏画廊中的手势竞争冲突，恢复 InteractiveViewer 100% 独占平滑极速双指缩放与自由拖拽平移\n- 🔒 永久固化 Release 签名支持 App 内无缝更新",
+    "published_at": "2025-05-19T08:00:00Z",
     "assets": [
       {
-        "name": "chronocare-v1.2.1-release.apk",
-        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.2.1/app-release.apk"
+        "name": "chronocare-v1.2.2-release.apk",
+        "browser_download_url": "https://github.com/liwo1861a-hub/chronocare-app/releases/download/v1.2.2/app-release.apk"
       }
     ]
   }

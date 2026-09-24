@@ -42,23 +42,23 @@ jobs:
 
       - name: Rename APK Output
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk chronocare-v1.2.1-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk chronocare-v1.2.2-release.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chronocare-v1.2.1-release
-          path: chronocare-v1.2.1-release.apk
+          name: chronocare-v1.2.2-release
+          path: chronocare-v1.2.2-release.apk
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.2.1
-          name: ChronoCare v1.2.1 彻底恢复双指缩放极速丝滑体验版
+          tag_name: v1.2.2
+          name: ChronoCare v1.2.2 指标走势范围标注·点击数据点直达单据报告单版
           body_path: assets/version.json
           files: |
-            chronocare-v1.2.1-release.apk
+            chronocare-v1.2.2-release.apk
             build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
